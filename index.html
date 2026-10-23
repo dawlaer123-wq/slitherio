@@ -71,9 +71,9 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
   -webkit-tap-highlight-color:transparent
 }
 #joystick{
-  position:fixed;left:max(18px,env(safe-area-inset-left));
+  position:fixed;left:50%;top:auto;transform:translateX(-50%);
   bottom:calc(24px + env(safe-area-inset-bottom));
-  width:138px;height:138px;border-radius:50%;
+  width:156px;height:156px;border-radius:50%;
   border:1px solid #d8f7ff55;background:#06152288;
   box-shadow:inset 0 0 28px #4de7ff1c,0 5px 24px #0006;
   display:grid;place-items:center;pointer-events:auto
@@ -83,7 +83,7 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
   background:#b4d5df55;box-shadow:0 0 16px #7deaff66
 }
 #joystickKnob{
-  position:absolute;width:58px;height:58px;border-radius:50%;
+  position:absolute;width:64px;height:64px;border-radius:50%;
   border:1px solid #9ffff0aa;
   background:radial-gradient(circle at 35% 30%,#a8fff277,#54ffe033 48%,#092536cc);
   box-shadow:0 0 22px #54ffe066,inset 0 0 12px #a8fff044;
@@ -109,8 +109,8 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
   #hint{display:none}
 }
 @media (pointer:coarse) and (max-width:430px){
-  #joystick{width:122px;height:122px}
-  #joystickKnob{width:52px;height:52px}
+  #joystick{width:140px;height:140px}
+  #joystickKnob{width:58px;height:58px}
   #boostButton{width:84px;height:84px;right:18px}
 }
 
@@ -239,10 +239,12 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
   <div class="admin-head"><div><h2>⚙ Центр управления ареной</h2><p class="small">Игра поставлена на паузу. Изменения сохраняются автоматически.</p></div><span class="pill">● LIVE CONFIG</span></div>
   <div class="admin-grid">
     <div class="setting-card wide"><h3>Игровой процесс</h3>
-      <label for="gameMode">Режим игры</label><select id="gameMode"><option value="classic">Классический — свободное движение</option><option value="hunt">Охота — враги тянутся к игроку</option></select>
+      <label for="gameMode">Режим игры</label><select id="gameMode"><option value="classic">Классический — свободное движение</option><option value="hunt">Охота — враги тянутся к игроку</option><option value="neonArena">Неоновая битва — неон-арена</option></select>
       <p id="modeNote" class="small mode-note">Соперники выбирают монеты и блуждают по арене.</p>
       <label for="botDifficulty">Интеллект противников</label><select id="botDifficulty"><option value="easy">Лёгкий — медленнее реагируют и чаще ошибаются</option><option value="medium">Средний — активнее преследуют, но без сложной тактики</option></select>
       <p id="difficultyNote" class="small mode-note">Простые боты без предсказания движения и сложного поиска пути.</p>
+      <label for="nearbySpawnRadius">Радиус появления врагов</label><div class="range-line"><input id="nearbySpawnRadius" type="range" min="260" max="900" step="20"><output id="nearbySpawnRadiusValue" class="range-value"></output></div>
+      <label class="check" for="enemyBoosts"><input id="enemyBoosts" type="checkbox"> Разрешить врагам периодически ускоряться</label>
       <label for="startAmount">Стартовый баланс</label><input id="startAmount" type="number" min="0" max="1000000000" step="1">
       <p class="small">Если старт ниже 1 000, обычные монеты и добыча уменьшаются пропорционально. При 1 000 и выше действует полный темп.</p>
     </div>
@@ -317,12 +319,17 @@ const canvas=$('game');
 const ctx=canvas.getContext('2d',{alpha:false,desynchronized:true});
 const IS_COARSE_POINTER=matchMedia('(pointer: coarse)').matches;
 const WORLD={w:2600,h:2000};
+const WORLD_SIZES={
+  normal:{w:2600,h:2000},
+  neonArena:{w:1900,h:1450}
+};
 const STEP=1/60;
 const TAU=Math.PI*2;
 const BOT_LIMIT=9;
 
 // Ускорение снимает 1 валюту за 3 секунды.
 const BOOST_COST=1/3;
+const BOT_BOOST_COST=.12;
 
 // Награда за погибшего противника.
 const LOOT_MULTIPLIER=6;
@@ -372,6 +379,8 @@ const settings={
   startAmount:1000,
   gameMode:'classic',
   botDifficulty:'medium',
+  nearbySpawnRadius:560,
+  enemyBoosts:true,
   performanceMode:'balanced',
   biome:'meadow',
   coinColor:'#ffc94d',
@@ -411,8 +420,15 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const angleDiff=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
 
-settings.gameMode=settings.gameMode==='hunt'?'hunt':'classic';
+settings.gameMode=settings.gameMode==='flagArena'
+  ?'neonArena'
+  :['classic','hunt','neonArena'].includes(settings.gameMode)?settings.gameMode:'classic';
 settings.botDifficulty=settings.botDifficulty==='easy'?'easy':'medium';
+settings.nearbySpawnRadius=clamp(Number(settings.nearbySpawnRadius)||560,260,900);
+if(!['armor','dragon','plasma','tiger','crystal','galaxy','circuit','pearl'].includes(settings.skin)){
+  settings.skin='armor';
+}
+if(!SKIN_PRESETS[settings.skinPreset]) settings.skinPreset='custom';
 settings.performanceMode=['balanced','highFps','maxSmooth','quality'].includes(settings.performanceMode)
   ?settings.performanceMode:'balanced';
 settings.biome=BIOME_PRESETS[settings.biome]?settings.biome:'meadow';
@@ -440,16 +456,25 @@ function botProfile(){
   return BOT_PROFILES[settings.botDifficulty]||BOT_PROFILES.medium;
 }
 const PERFORMANCE_PROFILES={
-  balanced:{dpr:1.5,maxBots:9,maxCoins:420,maxLootCoins:80,segmentStep:2,segmentCap:155,shadows:true,details:true,background:true,minimap:true},
-  highFps:{dpr:1.25,maxBots:8,maxCoins:300,maxLootCoins:55,segmentStep:3,segmentCap:130,shadows:false,details:true,background:true,minimap:true},
-  maxSmooth:{dpr:1,maxBots:6,maxCoins:220,maxLootCoins:35,segmentStep:5,segmentCap:92,shadows:false,details:false,background:false,minimap:false},
-  quality:{dpr:2,maxBots:9,maxCoins:520,maxLootCoins:100,segmentStep:1,segmentCap:155,shadows:true,details:true,background:true,minimap:true}
+  balanced:{dpr:1.5,maxBots:9,neonBots:10,neonMinBots:7,maxCoins:420,maxLootCoins:80,segmentStep:2,segmentCap:155,shadows:true,details:true,background:true,minimap:true},
+  highFps:{dpr:1.25,maxBots:8,neonBots:9,neonMinBots:6,maxCoins:300,maxLootCoins:55,segmentStep:3,segmentCap:130,shadows:false,details:true,background:true,minimap:true},
+  maxSmooth:{dpr:1,maxBots:6,neonBots:7,neonMinBots:5,maxCoins:220,maxLootCoins:35,segmentStep:5,segmentCap:92,shadows:false,details:false,background:false,minimap:false},
+  quality:{dpr:2,maxBots:9,neonBots:12,neonMinBots:8,maxCoins:520,maxLootCoins:100,segmentStep:1,segmentCap:155,shadows:true,details:true,background:true,minimap:true}
 };
 function performanceProfile(){
   return PERFORMANCE_PROFILES[settings.performanceMode]||PERFORMANCE_PROFILES.balanced;
 }
 function botLimit(){
-  return performanceProfile().maxBots;
+  const profile=performanceProfile();
+  return settings.gameMode==='neonArena'
+    ?(profile.neonBots||profile.maxBots+9)
+    :profile.maxBots;
+}
+function botMinimum(){
+  const profile=performanceProfile();
+  return settings.gameMode==='neonArena'
+    ?(profile.neonMinBots||Math.max(6,botLimit()-6))
+    :botLimit();
 }
 function coinLimit(loot=false){
   const profile=performanceProfile();
@@ -475,6 +500,7 @@ let camera={x:0,y:0};
 let pointer={x:0,y:0,active:false,down:false,id:null};
 let mobileJoystickId=null,mobileBoostId=null,mobileBoostHeld=false;
 let mobileAim={active:false,angle:0};
+let joystickDragged=false;
 let collisionGrid=new Map();
 let ended=false,paused=false,kills=0,clock=0,spawnTimer=0;
 let last=performance.now(),accumulator=0;
@@ -533,12 +559,17 @@ function syncUI(){
   $('magnetStrengthValue').textContent=Math.round(settings.magnetStrength)+' ед./с';
   $('powerNote').textContent=`Усиление ${settings.powerEnabled?'включено':'выключено'}: ${digits(settings.powerThreshold)}. Пока суперформа активна, каждая подобранная монета приносит x2.`;
   $('performanceNote').textContent={
-    balanced:'Баланс: обычная графика, 9 противников и полная детализация.',
-    highFps:'Высокий FPS: снижены тени, разрешение Canvas и количество объектов.',
-    maxSmooth:'Максимальная плавность: простые черви и фон, 6 противников, без мини-карты и дорогих эффектов.',
-    quality:'Качество: максимум детализации и визуальных эффектов.'
+    balanced:'Баланс: обычная графика, до 9 противников (в неон-арене — до 10).',
+    highFps:'Высокий FPS: снижены тени, разрешение Canvas и количество объектов; до 9 соперников в неон-арене.',
+    maxSmooth:'Максимальная плавность: простые черви и фон, до 6 противников, без мини-карты и дорогих эффектов.',
+    quality:'Качество: максимум детализации и до 12 соперников в неон-арене.'
   }[settings.performanceMode];
-  $('modeNote').textContent=settings.gameMode==='hunt'?'Соперники мягко поворачивают к игроку, но остаются обычными уязвимыми ботами.':'Соперники выбирают монеты и блуждают по арене.';
+  $('nearbySpawnRadiusValue').textContent=Math.round(settings.nearbySpawnRadius)+' ед.';
+  $('modeNote').textContent=settings.gameMode==='hunt'
+    ?'Соперники мягко поворачивают к игроку, но остаются обычными уязвимыми ботами.'
+    :settings.gameMode==='neonArena'
+      ?'Неоновая битва: тёмная арена и яркие обычные скины. Число соперников уменьшено, но они остаются рядом; черви отличаются длиной и толщиной. Баланс от 500 до 60 000, они ускоряются. Нажми «Применить и начать заново».'
+      :'Соперники выбирают монеты и блуждают по арене.';
   $('difficultyNote').textContent=settings.botDifficulty==='easy'
     ?'Лёгкий уровень: боты медленнее реагируют, сильнее отклоняются от цели и чаще пропускают монеты.'
     :'Средний уровень: боты быстрее корректируют курс, но не предсказывают движение и не используют сложную тактику.';
@@ -559,7 +590,10 @@ for(const key of Object.keys(settings)){
   if(!control) continue;
   control.addEventListener('input',()=>{
     const input=$(key);
-    if(key==='startAmount'){
+    if(key==='gameMode'){
+      settings.gameMode=['classic','hunt','neonArena'].includes(input.value)?input.value:'classic';
+      enforcePerformanceLimits();
+    }else if(key==='startAmount'){
       if(input.value===''||!Number.isFinite(Number(input.value))) return;
       settings.startAmount=clamp(Math.floor(Number(input.value)),0,1000000000);
     }else if(key==='magnetRadius'){
@@ -569,6 +603,8 @@ for(const key of Object.keys(settings)){
     }else if(key==='powerThreshold'){
       if(input.value===''||!Number.isFinite(Number(input.value))) return;
       settings.powerThreshold=clamp(Math.floor(Number(input.value)),100,1000000000);
+    }else if(key==='nearbySpawnRadius'){
+      settings.nearbySpawnRadius=clamp(Number(input.value)||560,260,900);
     }else if(key==='performanceMode'){
       settings.performanceMode=['balanced','highFps','maxSmooth','quality'].includes(input.value)
         ?input.value:'balanced';
@@ -648,10 +684,12 @@ function resetMobileInput(){
   mobileBoostId=null;
   mobileBoostHeld=false;
   mobileAim.active=false;
+  joystickDragged=false;
   pointer.active=false;
   const knob=$('joystickKnob');
   const button=$('boostButton');
   if(knob) knob.style.transform='translate(0,0)';
+  restoreMobileJoystick();
   if(button) button.classList.remove('active');
 }
 function updateMobileDirection(clientX,clientY){
@@ -660,7 +698,7 @@ function updateMobileDirection(clientX,clientY){
   const rect=joystick.getBoundingClientRect();
   const centerX=rect.left+rect.width/2;
   const centerY=rect.top+rect.height/2;
-  const max=Math.max(1,rect.width*.36);
+  const max=Math.max(1,rect.width*.34);
   let dx=clientX-centerX,dy=clientY-centerY;
   const length=Math.hypot(dx,dy);
   if(length>max){dx=dx/length*max;dy=dy/length*max}
@@ -668,11 +706,30 @@ function updateMobileDirection(clientX,clientY){
   const magnitude=Math.hypot(nx,ny);
   mobileAim.angle=Math.atan2(ny,nx);
   mobileAim.active=magnitude>.08;
-  pointer.x=width/2+nx*130;
-  pointer.y=height/2+ny*130;
   pointer.active=false;
   const knob=$('joystickKnob');
   if(knob) knob.style.transform=`translate(${dx}px,${dy}px)`;
+}
+function placeMobileJoystick(clientX,clientY){
+  const joystick=$('joystick');
+  if(!joystick) return;
+  const radius=joystick.offsetWidth/2;
+  const x=clamp(clientX,Math.max(8,radius+8),width-radius-8);
+  const y=clamp(clientY,Math.max(height*.38,radius+8),height-radius-8);
+  joystick.style.left=x+'px';
+  joystick.style.top=y+'px';
+  joystick.style.bottom='auto';
+  joystick.style.transform='translate(-50%,-50%)';
+}
+function restoreMobileJoystick(){
+  const joystick=$('joystick');
+  if(!joystick) return;
+  joystick.style.left='50%';
+  joystick.style.top='auto';
+  joystick.style.bottom='calc(24px + env(safe-area-inset-bottom))';
+  joystick.style.transform='translateX(-50%)';
+  const knob=$('joystickKnob');
+  if(knob) knob.style.transform='translate(0,0)';
 }
 canvas.addEventListener('pointermove',e=>{
   if(IS_COARSE_POINTER&&e.pointerType!=='mouse') return;
@@ -707,26 +764,42 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
 if(IS_COARSE_POINTER){
   const joystick=$('joystick');
   const boostButton=$('boostButton');
-  joystick?.addEventListener('pointerdown',e=>{
-    if(paused||ended) return;
+  const releaseJoystick=e=>{
+    if(e.pointerId!==mobileJoystickId) return;
+    mobileJoystickId=null;
+    joystickDragged=false;
+    mobileAim.active=false;
+    restoreMobileJoystick();
+  };
+  const moveJoystick=e=>{
+    if(e.pointerId!==mobileJoystickId) return;
+    e.preventDefault();
+    updateMobileDirection(e.clientX,e.clientY);
+  };
+  canvas.addEventListener('pointerdown',e=>{
+    if(paused||ended||e.pointerType==='mouse'||mobileJoystickId!==null) return;
+    const target=e.target;
+    if(target===boostButton||boostButton.contains(target)||target===$('gear')) return;
     e.preventDefault();
     mobileJoystickId=e.pointerId;
-    joystick.setPointerCapture?.(e.pointerId);
+    joystickDragged=true;
+    placeMobileJoystick(e.clientX,e.clientY);
+    canvas.setPointerCapture?.(e.pointerId);
+    updateMobileDirection(e.clientX,e.clientY);
+  },{passive:false});
+  addEventListener('pointermove',moveJoystick,{passive:false});
+  addEventListener('pointerup',releaseJoystick);
+  addEventListener('pointercancel',releaseJoystick);
+  joystick?.addEventListener('pointerdown',e=>{
+    if(paused||ended) return;
+    if(mobileJoystickId!==null&&mobileJoystickId!==e.pointerId) return;
+    e.preventDefault();
+    mobileJoystickId=e.pointerId;
+    joystickDragged=false;
+    canvas.setPointerCapture?.(e.pointerId);
     updateMobileDirection(e.clientX,e.clientY);
   });
-  joystick?.addEventListener('pointermove',e=>{
-    if(e.pointerId===mobileJoystickId){
-      e.preventDefault();
-      updateMobileDirection(e.clientX,e.clientY);
-    }
-  });
-  const releaseJoystick=e=>{
-    if(e.pointerId===mobileJoystickId){
-      mobileJoystickId=null;
-      mobileAim.active=false;
-      $('joystickKnob')?.style.setProperty('transform','translate(0,0)');
-    }
-  };
+  joystick?.addEventListener('pointermove',moveJoystick,{passive:false});
   joystick?.addEventListener('pointerup',releaseJoystick);
   joystick?.addEventListener('pointercancel',releaseJoystick);
   boostButton?.addEventListener('pointerdown',e=>{
@@ -775,7 +848,7 @@ addEventListener('keydown',e=>{
 });
 
 function targetRadius(w){
-  const base=clamp(10+Math.sqrt(w.growth)*.78,10,28);
+  const base=clamp(10+Math.sqrt(w.growth)*.78,10,28)*(w.bodyScale||1);
   if(!w.player||!settings.powerEnabled||w.amount<settings.powerThreshold) return base;
   const scale=settings.powerMode==='titan'?1.48
     :settings.powerMode==='prism'?1.2
@@ -806,21 +879,45 @@ function segmentCount(w){
   const base=settings.performanceMode==='maxSmooth'
     ?Math.floor(22+w.growth*.32)
     :Math.floor(28+w.growth*.55);
-  return Math.min(profile.segmentCap,base);
+  return clamp(Math.round(base*(w.lengthScale||1)),14,profile.segmentCap);
+}
+const BOT_SHAPES=[
+  {length:.72,body:1.2},  // короткий и толстый
+  {length:.86,body:1.08}, // коренастый
+  {length:1,body:.96},    // обычный, чуть тоньше
+  {length:1.28,body:.9},  // длинный и тонкий
+  {length:1.16,body:1.14} // длинный и толстый
+];
+function botShape(neonMode){
+  if(!neonMode) return {length:rand(.92,1.08),body:rand(.94,1.06)};
+  return BOT_SHAPES[Math.floor(rand(0,BOT_SHAPES.length))];
+}
+function randomBotAmount(){
+  if(settings.gameMode!=='neonArena') return Math.floor(rand(30,65));
+  const roll=Math.random();
+  if(roll<.32) return Math.floor(rand(500,1001));
+  if(roll<.58) return Math.floor(rand(1000,5001));
+  if(roll<.78) return Math.floor(rand(5000,10001));
+  if(roll<.94) return Math.floor(rand(10000,20001));
+  return Math.floor(rand(20000,60001));
 }
 function makeWorm(x,y,isPlayer=false){
   const presets=Object.values(SKIN_PRESETS);
   const look=presets[Math.floor(rand(0,presets.length))];
   const angle=rand(0,TAU);
+  const neonMode=settings.gameMode==='neonArena';
+  const shape=isPlayer?{length:1,body:1}:botShape(neonMode);
   const w={
     x,y,angle,
-    amount:isPlayer?settings.startAmount:Math.floor(rand(30,65)),
-    growth:isPlayer?0:rand(5,20),
+    amount:isPlayer?settings.startAmount:randomBotAmount(),
+    growth:isPlayer?0:neonMode?rand(8,25):rand(5,20),
     player:isPlayer,
     color:isPlayer?settings.wormColor:look.wormColor,
     accent:isPlayer?settings.wormAccent:look.wormAccent,
     skin:isPlayer?settings.skin:look.skin,
     speed:isPlayer?168:rand(104,124),
+    lengthScale:shape.length,
+    bodyScale:shape.body,
     radius:10,
     segments:[],
     alive:true,
@@ -830,6 +927,8 @@ function makeWorm(x,y,isPlayer=false){
     wander:rand(0,TAU),
     aiDirection:angle,
     coinTimer:0,
+    boostTimer:0,
+    boostCooldown:rand(1.5,3.5),
     boosting:false
   };
   w.radius=targetRadius(w);
@@ -842,13 +941,47 @@ function makeWorm(x,y,isPlayer=false){
   return w;
 }
 function spawnBot(){
-  for(let attempt=0;attempt<60;attempt++){
-    const point={x:rand(300,WORLD.w-300),y:rand(300,WORLD.h-300)};
+  for(let attempt=0;attempt<240;attempt++){
+    const minDistance=settings.gameMode==='neonArena'?180:220;
+    const maxDistance=settings.nearbySpawnRadius;
+    const angle=rand(0,TAU);
+    const distanceFromPlayer=rand(minDistance,maxDistance);
+    const point={
+      x:player.x+Math.cos(angle)*distanceFromPlayer,
+      y:player.y+Math.sin(angle)*distanceFromPlayer
+    };
+    if(point.x<100||point.x>WORLD.w-100||point.y<100||point.y>WORLD.h-100) continue;
+    if(distance(point,player)>maxDistance) continue;
+    const crowdDistance=settings.gameMode==='neonArena'?90:120;
     if(worms.some(w=>w.alive&&w.segments.some(
-      (s,i)=>i%5===0&&distance(s,point)<230))) continue;
+      (s,i)=>i%8===0&&distance(s,point)<crowdDistance))) continue;
     worms.push(makeWorm(point.x,point.y));
     return;
   }
+}
+function syncWorldSize(){
+  const size=settings.gameMode==='neonArena'?WORLD_SIZES.neonArena:WORLD_SIZES.normal;
+  WORLD.w=size.w;
+  WORLD.h=size.h;
+}
+function botWantsBoost(w,dt){
+  const allowed=settings.enemyBoosts;
+  if(!allowed||w.player||w.amount<=5) return false;
+  if(w.boostTimer>0){
+    w.boostTimer-=dt;
+    return true;
+  }
+  w.boostCooldown-=dt;
+  if(w.boostCooldown>0) return false;
+  const nearPlayer=player&&distance(w,player)<(settings.gameMode==='neonArena'?850:600);
+  const chance=settings.gameMode==='neonArena'?.72:.46;
+  if(nearPlayer&&Math.random()<chance){
+    w.boostTimer=rand(.45,.95);
+    w.boostCooldown=rand(2.2,4.8);
+    return true;
+  }
+  w.boostCooldown=rand(.7,1.5);
+  return false;
 }
 function incomeScale(){return clamp(settings.startAmount/1000,.2,1)}
 function scaledIncome(value){return Math.max(1,Math.floor(value*incomeScale()))}
@@ -891,6 +1024,7 @@ function buildCollisionGrid(living){
   }
 }
 function reset(){
+  syncWorldSize();
   ended=false;
   paused=false;
   kills=0;
@@ -910,7 +1044,11 @@ function reset(){
     s.y=player.y+i*player.radius*.66;
   });
   worms=[player];
-  for(let i=0;i<botLimit();i++) spawnBot();
+  for(let i=0;i<botLimit();i++){
+    const countBefore=worms.length;
+    spawnBot();
+    if(worms.length===countBefore) break;
+  }
   for(let i=0;i<coinLimit(false);i++) addCoin();
 
   camera.x=player.x;
@@ -992,10 +1130,14 @@ function botDirection(w,dt){
   const profile=botProfile();
   w.aiTimer-=dt;
   if(w.aiTimer<=0){
-    const reaction=settings.gameMode==='hunt'?profile.reactionHunt:profile.reactionClassic;
+    const reaction=settings.gameMode==='hunt'||settings.gameMode==='neonArena'
+      ?profile.reactionHunt:profile.reactionClassic;
     w.aiTimer=rand(reaction[0],reaction[1]);
     w.wander+=rand(-.5,.5);
-    if(settings.gameMode==='hunt') w.target=player;
+    if(settings.gameMode==='hunt'||settings.gameMode==='neonArena'
+      ||(player&&distance(w,player)>settings.nearbySpawnRadius*.8)){
+      w.target=player;
+    }
     else{
       let best=null,bestScore=Infinity;
       for(const coin of coins){const score=distance(w,coin)/(coin.loot?1.4:1);if(score<bestScore){best=coin;bestScore=score}}
@@ -1055,6 +1197,12 @@ function update(dt){
       }
     }else{
       desired=botDirection(w,dt);
+      if(botWantsBoost(w,dt)){
+        const paidTime=Math.min(dt,w.amount/BOT_BOOST_COST);
+        w.amount=Math.max(0,w.amount-BOT_BOOST_COST*paidTime);
+        w.boosting=true;
+        moveDistance=poweredSpeed*(dt+.65*paidTime);
+      }
     }
 
     const turn=(w.player?4.2:botProfile().turnRate)*dt;
@@ -1160,9 +1308,20 @@ function update(dt){
   worms=worms.filter(w=>w.alive||w.player);
 
   spawnTimer+=dt;
-  if(spawnTimer>3){
+  const enemyCount=worms.filter(w=>!w.player).length;
+  if(settings.gameMode==='neonArena'&&enemyCount<botMinimum()){
+    if(spawnTimer>=.35){
+      spawnTimer=0;
+      const refillCount=Math.min(3,botMinimum()-enemyCount);
+      for(let i=0;i<refillCount&&worms.filter(w=>!w.player).length<botLimit();i++){
+        const before=worms.length;
+        spawnBot();
+        if(worms.length===before) break;
+      }
+    }
+  }else if(spawnTimer>3){
     spawnTimer=0;
-    if(worms.filter(w=>!w.player).length<botLimit()) spawnBot();
+    if(enemyCount<botLimit()) spawnBot();
   }
   if(coins.filter(c=>!c.loot).length<coinLimit(false)&&Math.random()<dt*30) addCoin();
 
@@ -1188,7 +1347,9 @@ function visible(x,y,pad=60){
     &&Math.abs(y-camera.y)<height/2+pad;
 }
 function drawBackground(){
-  ctx.fillStyle=settings.bgColor;
+  const neonMode=settings.gameMode==='neonArena';
+  const arenaAccent=neonMode?'#2ad8e9':settings.bgAccent;
+  ctx.fillStyle=neonMode?'#061525':settings.bgColor;
   ctx.fillRect(0,0,width,height);
   if(!performanceProfile().background){
     return;
@@ -1200,13 +1361,31 @@ function drawBackground(){
   ctx.beginPath();
   ctx.rect(0,0,WORLD.w,WORLD.h);
   ctx.clip();
-  ctx.strokeStyle=settings.bgAccent;
-  ctx.fillStyle=settings.bgAccent;
+  ctx.strokeStyle=arenaAccent;
+  ctx.fillStyle=arenaAccent;
   ctx.lineWidth=1;
   ctx.globalAlpha=.12;
 
-  const mode=settings.background;
-  if(mode==='hex'){
+  const mode=neonMode?'neonArena':settings.background;
+  if(mode==='neonArena'){
+    ctx.globalAlpha=.22;
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    const grid=96;
+    for(let x=Math.floor(left/grid)*grid;x<left+width+grid;x+=grid){
+      ctx.moveTo(x,top);ctx.lineTo(x,top+height);
+    }
+    for(let y=Math.floor(top/grid)*grid;y<top+height+grid;y+=grid){
+      ctx.moveTo(left,y);ctx.lineTo(left+width,y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha=.18;
+    for(let i=0;i<150;i++){
+      const x=(i*173.7+37)%WORLD.w;
+      const y=(i*97.3+19)%WORLD.h;
+      ctx.fillRect(x,y,i%7===0?2:1,i%7===0?2:1);
+    }
+  }else if(mode==='hex'){
     const r=43,dx=r*1.5,dy=Math.sqrt(3)*r;
     ctx.beginPath();
     for(let col=Math.floor(left/dx)-1;col<Math.ceil((left+width)/dx)+1;col++){
@@ -1317,7 +1496,22 @@ function drawBackground(){
   ctx.save();
   ctx.translate(-left,-top);
   ctx.globalCompositeOperation='screen';
-  if(biome==='lava'){
+  if(neonMode){
+    ctx.globalAlpha=.12;
+    ctx.fillStyle='#21d8f0';
+    for(let i=0;i<10;i++){
+      const x=(i*251+WORLD.w*.2)%WORLD.w;
+      const y=(i*149+Math.sin(clock*.7+i)*35+WORLD.h)%WORLD.h;
+      ctx.beginPath();ctx.arc(x,y,18+5*Math.sin(clock+i),0,TAU);ctx.fill();
+    }
+    ctx.globalAlpha=.18;
+    ctx.fillStyle='#ff334f';
+    for(let i=0;i<18;i++){
+      const x=(i*137+clock*9)%WORLD.w;
+      const y=(i*211+Math.sin(clock+i)*18+WORLD.h)%WORLD.h;
+      ctx.beginPath();ctx.arc(x,y,2.5,0,TAU);ctx.fill();
+    }
+  }else if(biome==='lava'){
     ctx.globalAlpha=.18+.04*Math.sin(clock*2);
     ctx.fillStyle='#ff3d18';
     for(let i=0;i<18;i++){
@@ -1350,19 +1544,19 @@ function drawBackground(){
 
   ctx.save();
   ctx.translate(-left,-top);
-  ctx.strokeStyle=settings.bgAccent;
-  ctx.shadowColor=settings.bgAccent;
+  ctx.strokeStyle=arenaAccent;
+  ctx.shadowColor=arenaAccent;
   ctx.shadowBlur=24;
   ctx.lineWidth=6;
   ctx.strokeRect(0,0,WORLD.w,WORLD.h);
   ctx.shadowBlur=0;
-  ctx.strokeStyle=settings.bgAccent+'28';
+  ctx.strokeStyle=arenaAccent+'28';
   ctx.lineWidth=30;
   ctx.strokeRect(0,0,WORLD.w,WORLD.h);
   ctx.setLineDash([12,18]);
   ctx.lineDashOffset=-clock*24;
   ctx.lineWidth=2;
-  ctx.strokeStyle=settings.bgAccent;
+  ctx.strokeStyle=arenaAccent;
   ctx.strokeRect(12,12,WORLD.w-24,WORLD.h-24);
   ctx.restore();
 }
@@ -1373,8 +1567,9 @@ function drawCoin(coin){
   const r=(coin.loot?8:rare?8:coin.value>=10?6.5:5)
     +Math.sin(clock*3+coin.phase)*.5;
   const biome=BIOME_PRESETS[settings.biome]||BIOME_PRESETS.meadow;
-  const color=coin.loot?'#ffe89f':rare?biome.coinRareColor:biome.coinColor;
-  const kind=biome.coinKind||'leaf';
+  const neonMode=settings.gameMode==='neonArena';
+  const color=coin.loot?'#ffe89f':neonMode?'#ffd84d':rare?biome.coinRareColor:biome.coinColor;
+  const kind=neonMode?'arenaCoin':biome.coinKind||'leaf';
 
   const simple=!performanceProfile().shadows;
   if(!simple){ctx.shadowColor=color;ctx.shadowBlur=coin.loot||rare?17:8}
@@ -1393,12 +1588,14 @@ function drawCoin(coin){
     ctx.lineTo(coin.x+r*.25,coin.y+r*1.35);ctx.lineTo(coin.x-r*.9,coin.y+r*.5);ctx.closePath();
   }else if(kind==='bubble'){
     ctx.arc(coin.x,coin.y,r,0,TAU);
+  }else if(kind==='arenaCoin'){
+    ctx.arc(coin.x,coin.y,r,0,TAU);
   }else{
     ctx.ellipse(coin.x,coin.y,r*1.15,r*.72,Math.sin(clock+coin.phase)*.5,0,TAU);
   }
   ctx.fill();
   if(!simple)ctx.shadowBlur=0;
-  ctx.strokeStyle=kind==='ice'?'#e8ffff':kind==='ember'?'#ff6b2e':kind==='shard'?'#f0d9ff':kind==='bubble'?'#eaff9e':'#a86b19';
+  ctx.strokeStyle=kind==='ice'?'#e8ffff':kind==='ember'?'#ff6b2e':kind==='shard'?'#f0d9ff':kind==='bubble'?'#eaff9e':kind==='arenaCoin'?'#fff1a0':'#a86b19';
   ctx.lineWidth=1.3;
   ctx.beginPath();
   if(kind==='ice'){
@@ -1410,7 +1607,12 @@ function drawCoin(coin){
   ctx.stroke();
   ctx.fillStyle='#fffbd7';
   ctx.globalAlpha=.8;
-  if(kind==='ember'||kind==='bubble'){
+  if(kind==='arenaCoin'){
+    ctx.fillStyle='#fff3a8';
+    ctx.font=`900 ${Math.max(7,r*1.15)}px system-ui`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('$',coin.x,coin.y+.5);
+  }else if(kind==='ember'||kind==='bubble'){
     ctx.beginPath();ctx.arc(coin.x-r*.28,coin.y-r*.3,r*.2,0,TAU);ctx.fill();
   }else{
     ctx.fillRect(coin.x-1,coin.y-r*.4,2,r*.8);
@@ -1509,6 +1711,7 @@ function skinDetail(w,sr,i,visual=null){
   }
 }
 
+
 function drawSimpleWorm(w){
   if(!visible(w.x,w.y,100)) return;
   const visual=wormPower(w);
@@ -1550,6 +1753,7 @@ function drawSimpleWorm(w){
   ctx.fillStyle=visual.active?visual.accent:'#f4ffff';
   ctx.fillText(text,w.x,y+11.5);
 }
+
 
 function drawWorm(w){
   if(!w.alive) return;
@@ -1619,7 +1823,6 @@ function drawWorm(w){
   ctx.beginPath();
   ctx.ellipse(0,0,r*1.28,r*1.06,0,0,TAU);
   ctx.fill();
-
   if(settings.horns){
     ctx.strokeStyle=visual.accent;
     ctx.lineWidth=2;

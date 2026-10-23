@@ -325,6 +325,8 @@ const WORLD_SIZES={
 };
 const STEP=1/60;
 const TAU=Math.PI*2;
+// PERF: фиксированный размер ячейки для локальных запросов без Map-ключей.
+const GRID_CELL=128;
 const BOT_LIMIT=9;
 
 // Ускорение снимает 1 валюту за 3 секунды.
@@ -374,6 +376,7 @@ const SKIN_PRESETS={
   forest:{name:'Лесной дракон',skin:'dragon',wormColor:'#8ecf72',wormAccent:'#e8ffc2'},
   neon:{name:'Ультрафиолет',skin:'circuit',wormColor:'#a376ec',wormAccent:'#78f1ed'}
 };
+const BOT_SKIN_PRESETS=Object.values(SKIN_PRESETS);
 
 const settings={
   startAmount:1000,
@@ -482,28 +485,50 @@ function coinLimit(loot=false){
 }
 function enforcePerformanceLimits(){
   let regular=0,loot=0;
-  coins=coins.filter(coin=>{
-    if(coin.loot){loot++;return loot<=coinLimit(true)}
-    regular++;return regular<=coinLimit(false);
-  });
+  let writeCoin=0;
+  for(const coin of coins){
+    if(!coin.active){coinPool.push(coin);continue}
+    const keep=coin.loot?loot++<coinLimit(true):regular++<coinLimit(false);
+    if(keep) coins[writeCoin++]=coin;
+    else{
+      removeCoinFromGrid(coin);
+      coin.active=false;
+      coinPool.push(coin);
+    }
+  }
+  coins.length=writeCoin;
   if(!performanceProfile().details){
-    particles=[];
-    deathEffects=[];
+    for(const particle of particles) particlePool.push(particle);
+    for(const effect of deathEffects) deathEffectPool.push(effect);
+    particles.length=0;
+    deathEffects.length=0;
   }
   let bots=0;
-  worms=worms.filter(w=>w.player||++bots<=botLimit());
+  let writeWorm=0;
+  for(const worm of worms){
+    if(worm.player||bots++<botLimit()) worms[writeWorm++]=worm;
+  }
+  worms.length=writeWorm;
 }
 
 let width,height,dpr,player;
 let worms=[],coins=[],particles=[],deathEffects=[];
-let camera={x:0,y:0};
+let camera={x:0,y:0},cameraPrev={x:0,y:0};
 let pointer={x:0,y:0,active:false,down:false,id:null};
 let mobileJoystickId=null,mobileBoostId=null,mobileBoostHeld=false;
 let mobileAim={active:false,angle:0};
 let joystickDragged=false;
-let collisionGrid=new Map();
-let ended=false,paused=false,kills=0,clock=0,spawnTimer=0;
-let last=performance.now(),accumulator=0;
+const GRID_COLS=Math.ceil(2600/GRID_CELL);
+const GRID_ROWS=Math.ceil(2000/GRID_CELL);
+const collisionBuckets=Array.from({length:GRID_COLS*GRID_ROWS},()=>[]);
+const coinBuckets=Array.from({length:GRID_COLS*GRID_ROWS},()=>[]);
+// PERF: повторно используем массивы и объекты, чтобы уменьшить работу GC.
+let livingWorms=[],particlePool=[],deathEffectPool=[],coinPool=[],collisionEntries=[],coinCandidates=[];
+let collisionEntryUsed=0;
+let gridPatternCache=new Map(),coinSpriteCache=new Map(),glowSpriteCache=new Map();
+let particleSpriteCache=new Map(),vignetteSprite=null;
+let ended=false,paused=false,kills=0,clock=0,spawnTimer=0,statsTimer=0;
+let last=performance.now(),accumulator=0,renderAlpha=1,drawCameraX=0,drawCameraY=0;
 
 function digits(value){
   return Math.floor(Math.max(0,value)+1e-7).toLocaleString('en-US');
@@ -663,6 +688,12 @@ function resize(){
   dpr=Math.min(devicePixelRatio||1,performanceProfile().dpr);
   canvas.width=Math.round(width*dpr);
   canvas.height=Math.round(height*dpr);
+  // Кэшированные спрайты пересоздаются при смене DPR, оставаясь чёткими на Retina.
+  gridPatternCache.clear();
+  coinSpriteCache.clear();
+  glowSpriteCache.clear();
+  particleSpriteCache.clear();
+  vignetteSprite=null;
   canvas.style.width=width+'px';
   canvas.style.height=height+'px';
   if(ended) requestAnimationFrame(fitResult);
@@ -857,18 +888,31 @@ function targetRadius(w){
 }
 function wormPower(w){
   const active=Boolean(w.player&&settings.powerEnabled&&w.amount>=settings.powerThreshold);
-  if(!active) return {active:false,color:w.color,accent:w.accent,mode:'none',speedScale:1};
+  const visual=w.powerVisual||(w.powerVisual={});
+  if(!active){
+    visual.active=false;visual.color=w.color;visual.accent=w.accent;
+    visual.mode='none';visual.speedScale=1;
+    return visual;
+  }
   const mode=settings.powerMode;
   if(mode==='prism'){
-    const hue=(clock*125)%360;
-    return {active:true,color:`hsl(${hue} 100% 67%)`,accent:`hsl(${(hue+75)%360} 100% 82%)`,mode,speedScale:1.1};
+    const hue=Math.round((clock*125%360)/15)*15%360;
+    visual.color=`hsl(${hue} 100% 67%)`;
+    visual.accent=`hsl(${(hue+75)%360} 100% 82%)`;
+    visual.mode=mode;visual.speedScale=1.1;
+  }else if(mode==='storm'){
+    visual.color='#66dfff';visual.accent='#e7fdff';
+    visual.mode=mode;visual.speedScale=1.22;
+  }else if(mode==='aurora'){
+    const hue=Math.round((145+Math.sin(clock*1.6)*35)/10)*10;
+    visual.color=`hsl(${hue} 95% 62%)`;visual.accent='#d2ffef';
+    visual.mode=mode;visual.speedScale=1.08;
+  }else{
+    visual.color='#ffc452';visual.accent='#fff0ad';
+    visual.mode='titan';visual.speedScale=.96;
   }
-  if(mode==='storm') return {active:true,color:'#66dfff',accent:'#e7fdff',mode,speedScale:1.22};
-  if(mode==='aurora'){
-    const hue=145+Math.sin(clock*1.6)*35;
-    return {active:true,color:`hsl(${hue} 95% 62%)`,accent:'#d2ffef',mode,speedScale:1.08};
-  }
-  return {active:true,color:'#ffc452',accent:'#fff0ad',mode,speedScale:.96};
+  visual.active=true;
+  return visual;
 }
 function coinAward(w,coin){
   const multiplier=wormPower(w).active?2:1;
@@ -902,13 +946,12 @@ function randomBotAmount(){
   return Math.floor(rand(20000,60001));
 }
 function makeWorm(x,y,isPlayer=false){
-  const presets=Object.values(SKIN_PRESETS);
-  const look=presets[Math.floor(rand(0,presets.length))];
+  const look=BOT_SKIN_PRESETS[Math.floor(rand(0,BOT_SKIN_PRESETS.length))];
   const angle=rand(0,TAU);
   const neonMode=settings.gameMode==='neonArena';
   const shape=isPlayer?{length:1,body:1}:botShape(neonMode);
   const w={
-    x,y,angle,
+    x,y,angle,prevX:x,prevY:y,prevAngle:angle,
     amount:isPlayer?settings.startAmount:randomBotAmount(),
     growth:isPlayer?0:neonMode?rand(8,25):rand(5,20),
     player:isPlayer,
@@ -919,6 +962,7 @@ function makeWorm(x,y,isPlayer=false){
     lengthScale:shape.length,
     bodyScale:shape.body,
     radius:10,
+    powerVisual:{active:false,color:isPlayer?settings.wormColor:look.wormColor,accent:isPlayer?settings.wormAccent:look.wormAccent,mode:'none',speedScale:1},
     segments:[],
     alive:true,
     shield:2.5,
@@ -935,9 +979,19 @@ function makeWorm(x,y,isPlayer=false){
   for(let i=0;i<segmentCount(w);i++){
     w.segments.push({
       x:x-Math.cos(angle)*i*w.radius*.66,
-      y:y-Math.sin(angle)*i*w.radius*.66
+      y:y-Math.sin(angle)*i*w.radius*.66,
+      prevX:x-Math.cos(angle)*i*w.radius*.66,
+      prevY:y-Math.sin(angle)*i*w.radius*.66
     });
   }
+  w.minX=x;w.maxX=x;w.minY=y;w.maxY=y;
+  for(const segment of w.segments){
+    if(segment.x<w.minX) w.minX=segment.x;
+    if(segment.x>w.maxX) w.maxX=segment.x;
+    if(segment.y<w.minY) w.minY=segment.y;
+    if(segment.y>w.maxY) w.maxY=segment.y;
+  }
+  w.prevMinX=w.minX;w.prevMaxX=w.maxX;w.prevMinY=w.minY;w.prevMaxY=w.maxY;
   return w;
 }
 function spawnBot(){
@@ -993,34 +1047,109 @@ function addCoin(
   loot=false
 ){
   const limit=coinLimit(loot);
-  const sameType=coins.reduce((count,coin)=>count+(coin.loot===loot),0);
+  let sameType=0,replacementIndex=-1;
+  for(let i=0;i<coins.length;i++){
+    const coin=coins[i];
+    if(!coin.active) continue;
+    if(coin.loot===loot) sameType++;
+    else if(!loot&&coin.loot) continue;
+    else if(replacementIndex<0&&!coin.loot) replacementIndex=i;
+  }
+  let reusable=null;
   if(sameType>=limit){
     if(!loot) return;
-    const replaceIndex=coins.findIndex(coin=>!coin.loot);
-    if(replaceIndex<0) return;
-    coins.splice(replaceIndex,1);
+    if(replacementIndex<0) return;
+    reusable=coins.splice(replacementIndex,1)[0];
+    removeCoinFromGrid(reusable);
   }
-  coins.push({
-    x:clamp(x,28,WORLD.w-28),
-    y:clamp(y,28,WORLD.h-28),
-    value,loot,phase:rand(0,TAU)
-  });
+  const coin=reusable||coinPool.pop()||{};
+  coin.x=clamp(x,28,WORLD.w-28);
+  coin.y=clamp(y,28,WORLD.h-28);
+  coin.prevX=coin.x;
+  coin.prevY=coin.y;
+  coin.value=value;
+  coin.loot=loot;
+  coin.phase=rand(0,TAU);
+  coin.active=true;
+  coin.gridCell=-1;
+  coin.gridIndex=-1;
+  coins.push(coin);
+  if(coinGridReady) insertCoinInGrid(coin);
 }
-function collisionCellKey(x,y){
-  return (Math.floor(x/128)<<16)^Math.floor(y/128);
+function spatialCellIndex(x,y){
+  const cellX=clamp(Math.floor(x/GRID_CELL),0,GRID_COLS-1);
+  const cellY=clamp(Math.floor(y/GRID_CELL),0,GRID_ROWS-1);
+  return cellY*GRID_COLS+cellX;
 }
 function buildCollisionGrid(living){
-  collisionGrid.clear();
+  // PERF: индексируем сегменты плоской spatial grid для локальной проверки столкновений.
+  for(const bucket of collisionBuckets) bucket.length=0;
+  const previousUsed=collisionEntryUsed;
+  collisionEntryUsed=0;
   const step=performanceProfile().segmentStep;
   for(const worm of living){
     if(!worm.alive||worm.shield>0) continue;
     for(let i=0;i<worm.segments.length;i+=step){
       const segment=worm.segments[i];
-      const key=collisionCellKey(segment.x,segment.y);
-      let bucket=collisionGrid.get(key);
-      if(!bucket) collisionGrid.set(key,bucket=[]);
-      bucket.push({worm,segment});
+      const bucket=collisionBuckets[spatialCellIndex(segment.x,segment.y)];
+      let entry=collisionEntries[collisionEntryUsed];
+      if(!entry) entry=collisionEntries[collisionEntryUsed]={worm:null,segment:null};
+      entry.worm=worm;
+      entry.segment=segment;
+      collisionEntryUsed++;
+      bucket.push(entry);
     }
+  }
+  for(let i=collisionEntryUsed;i<previousUsed;i++){
+    collisionEntries[i].worm=null;
+    collisionEntries[i].segment=null;
+  }
+}
+let coinGridReady=false;
+function insertCoinInGrid(coin){
+  const cell=spatialCellIndex(coin.x,coin.y);
+  const bucket=coinBuckets[cell];
+  coin.gridCell=cell;
+  coin.gridIndex=bucket.length;
+  bucket.push(coin);
+}
+function removeCoinFromGrid(coin){
+  const cell=coin.gridCell;
+  if(cell<0) return;
+  const bucket=coinBuckets[cell];
+  const index=coin.gridIndex;
+  const last=bucket.pop();
+  if(index<bucket.length){
+    bucket[index]=last;
+    last.gridIndex=index;
+  }
+  coin.gridCell=-1;
+  coin.gridIndex=-1;
+}
+function moveCoin(coin,x,y){
+  const nextX=clamp(x,28,WORLD.w-28);
+  const nextY=clamp(y,28,WORLD.h-28);
+  const nextCell=spatialCellIndex(nextX,nextY);
+  coin.x=nextX;
+  coin.y=nextY;
+  if(coinGridReady&&coin.gridCell!==nextCell){
+    removeCoinFromGrid(coin);
+    insertCoinInGrid(coin);
+  }
+}
+function buildCoinGrid(){
+  // PERF: еда индексируется той же сеткой для магнита и подбора только рядом с червём.
+  for(const bucket of coinBuckets) bucket.length=0;
+  coinGridReady=true;
+  for(const coin of coins){
+    if(!coin.active) continue;
+    coin.prevX=coin.x;
+    coin.prevY=coin.y;
+    const cell=spatialCellIndex(coin.x,coin.y);
+    const bucket=coinBuckets[cell];
+    coin.gridCell=cell;
+    coin.gridIndex=bucket.length;
+    bucket.push(coin);
   }
 }
 function reset(){
@@ -1030,19 +1159,28 @@ function reset(){
   kills=0;
   clock=0;
   spawnTimer=0;
+  statsTimer=0;
   accumulator=0;
+  coinGridReady=false;
+  for(const coin of coins) coinPool.push(coin);
   coins=[];
+  for(const particle of particles) particlePool.push(particle);
   particles=[];
+  for(const effect of deathEffects) deathEffectPool.push(effect);
   deathEffects=[];
   releasePointer();
   resetMobileInput();
 
   player=makeWorm(WORLD.w/2,WORLD.h/2,true);
   player.angle=-Math.PI/2;
-  player.segments.forEach((s,i)=>{
+  for(let i=0;i<player.segments.length;i++){
+    const s=player.segments[i];
     s.x=player.x;
     s.y=player.y+i*player.radius*.66;
-  });
+    s.prevX=s.x;
+    s.prevY=s.y;
+  }
+  player.prevAngle=player.angle;
   worms=[player];
   for(let i=0;i<botLimit();i++){
     const countBefore=worms.length;
@@ -1053,6 +1191,10 @@ function reset(){
 
   camera.x=player.x;
   camera.y=player.y;
+  cameraPrev.x=camera.x;
+  cameraPrev.y=camera.y;
+  drawCameraX=camera.x;
+  drawCameraY=camera.y;
   $('mobileControls').classList.remove('hidden');
   $('admin').classList.remove('open');
   $('end').classList.remove('open');
@@ -1060,7 +1202,9 @@ function reset(){
 }
 function updateStats(){
   $('kills').textContent=kills;
-  $('bots').textContent=worms.filter(w=>w.alive&&!w.player).length;
+  let bots=0;
+  for(const worm of worms) if(worm.alive&&!worm.player) bots++;
+  $('bots').textContent=bots;
 }
 function finish(win){
   if(ended) return;
@@ -1079,12 +1223,17 @@ function burst(x,y,color,count=10){
     const angle=rand(0,TAU);
     const speed=rand(30,170);
     const life=rand(.35,.8);
-    particles.push({
-      x,y,
-      vx:Math.cos(angle)*speed,
-      vy:Math.sin(angle)*speed,
-      life,max:life,color
-    });
+    const particle=particlePool.pop()||{};
+    particle.x=x;
+    particle.y=y;
+    particle.prevX=x;
+    particle.prevY=y;
+    particle.vx=Math.cos(angle)*speed;
+    particle.vy=Math.sin(angle)*speed;
+    particle.life=life;
+    particle.max=life;
+    particle.color=color;
+    particles.push(particle);
   }
 }
 function addDeathEffect(x,y){
@@ -1093,8 +1242,15 @@ function addDeathEffect(x,y){
   const mode=settings.deathEffectMode==='mix'
     ?styles[Math.floor(Math.random()*styles.length)]
     :settings.deathEffectMode;
-  deathEffects.push({x,y,mode,life:.72,max:.72,seed:rand(0,TAU)});
-  if(deathEffects.length>18) deathEffects.shift();
+  const effect=deathEffectPool.pop()||{};
+  effect.x=x;
+  effect.y=y;
+  effect.mode=mode;
+  effect.life=.72;
+  effect.max=.72;
+  effect.seed=rand(0,TAU);
+  deathEffects.push(effect);
+  if(deathEffects.length>18) deathEffectPool.push(deathEffects.shift());
 }
 function killWorm(w,killer){
   if(!w.alive) return;
@@ -1149,13 +1305,14 @@ function botDirection(w,dt){
         +rand(-profile.randomAim,profile.randomAim)
       :w.wander;
     let vx=Math.cos(desired),vy=Math.sin(desired);
-    const probe={x:w.x+Math.cos(w.angle)*55,y:w.y+Math.sin(w.angle)*55};
-    for(const other of worms){
+    const probeX=w.x+Math.cos(w.angle)*55;
+    const probeY=w.y+Math.sin(w.angle)*55;
+    for(const other of livingWorms){
       if(other===w||!other.alive)continue;
       const range=65+other.radius;
-      if(Math.abs(other.x-probe.x)>range+240||Math.abs(other.y-probe.y)>range+240)continue;
+      if(Math.abs(other.x-probeX)>range+240||Math.abs(other.y-probeY)>range+240)continue;
       for(let i=0;i<other.segments.length;i+=profile.segmentStep){
-        const s=other.segments[i],dx=probe.x-s.x,dy=probe.y-s.y;
+        const s=other.segments[i],dx=probeX-s.x,dy=probeY-s.y;
         if(Math.abs(dx)>range||Math.abs(dy)>range)continue;
         const d=Math.hypot(dx,dy);
         if(d<range){const force=(range-d)/range*1.4*profile.avoidance;vx+=dx/(d||1)*force;vy+=dy/(d||1)*force}
@@ -1170,7 +1327,24 @@ function botDirection(w,dt){
 }
 function update(dt){
   clock+=dt;
-  const living=worms.filter(w=>w.alive);
+  const living=livingWorms;
+  living.length=0;
+  for(const worm of worms){
+    if(!worm.alive) continue;
+    living.push(worm);
+    worm.prevX=worm.x;
+    worm.prevY=worm.y;
+    worm.prevAngle=worm.angle;
+    for(const segment of worm.segments){
+      segment.prevX=segment.x;
+      segment.prevY=segment.y;
+    }
+    worm.prevMinX=worm.minX;
+    worm.prevMaxX=worm.maxX;
+    worm.prevMinY=worm.minY;
+    worm.prevMaxY=worm.maxY;
+  }
+  buildCoinGrid();
 
   for(const w of living){
     w.shield=Math.max(0,w.shield-dt);
@@ -1214,14 +1388,25 @@ function update(dt){
       const magnetRadius=settings.magnetRadius;
       const magnetRadiusSq=magnetRadius*magnetRadius;
       const pickupRadius=w.radius+9;
-      for(const coin of coins){
+      coinCandidates.length=0;
+      const minX=clamp(Math.floor((w.x-magnetRadius)/GRID_CELL),0,GRID_COLS-1);
+      const maxX=clamp(Math.floor((w.x+magnetRadius)/GRID_CELL),0,GRID_COLS-1);
+      const minY=clamp(Math.floor((w.y-magnetRadius)/GRID_CELL),0,GRID_ROWS-1);
+      const maxY=clamp(Math.floor((w.y+magnetRadius)/GRID_CELL),0,GRID_ROWS-1);
+      for(let cellY=minY;cellY<=maxY;cellY++){
+        for(let cellX=minX;cellX<=maxX;cellX++){
+          const bucket=coinBuckets[cellY*GRID_COLS+cellX];
+          for(const coin of bucket) coinCandidates.push(coin);
+        }
+      }
+      for(const coin of coinCandidates){
+        if(!coin.active) continue;
         const dx=w.x-coin.x,dy=w.y-coin.y,distanceSq=dx*dx+dy*dy;
         if(distanceSq>=magnetRadiusSq||distanceSq<=pickupRadius*pickupRadius) continue;
         const d=Math.sqrt(distanceSq);
         const closeness=1-d/magnetRadius;
         const pull=Math.min(d-pickupRadius,settings.magnetStrength*dt*(.3+.7*closeness));
-        coin.x+=dx/d*pull;
-        coin.y+=dy/d*pull;
+        moveCoin(coin,coin.x+dx/d*pull,coin.y+dy/d*pull);
       }
     }
 
@@ -1232,27 +1417,37 @@ function update(dt){
       if(!w.player) w.coinTimer=profile.coinInterval;
       const pickupRadius=w.radius+9;
       const pickupRadiusSq=pickupRadius*pickupRadius;
-      for(let i=coins.length-1;i>=0;i--){
-        const coin=coins[i];
-        const dx=coin.x-w.x,dy=coin.y-w.y;
-        if(dx*dx+dy*dy<pickupRadiusSq){
-          const award=coinAward(w,coin);
-          w.amount+=award;
-          w.growth+=coin.loot?2:1;
-          if(w.player){
-            burst(coin.x,coin.y,coin.loot?'#fff0aa':'#ffd36e',5);
+      const minX=clamp(Math.floor((w.x-pickupRadius)/GRID_CELL),0,GRID_COLS-1);
+      const maxX=clamp(Math.floor((w.x+pickupRadius)/GRID_CELL),0,GRID_COLS-1);
+      const minY=clamp(Math.floor((w.y-pickupRadius)/GRID_CELL),0,GRID_ROWS-1);
+      const maxY=clamp(Math.floor((w.y+pickupRadius)/GRID_CELL),0,GRID_ROWS-1);
+      for(let cellY=minY;cellY<=maxY;cellY++){
+        for(let cellX=minX;cellX<=maxX;cellX++){
+          const bucket=coinBuckets[cellY*GRID_COLS+cellX];
+          for(let i=0;i<bucket.length;){
+            const coin=bucket[i];
+            if(!coin.active){i++;continue}
+            const dx=coin.x-w.x,dy=coin.y-w.y;
+            if(dx*dx+dy*dy>=pickupRadiusSq){i++;continue}
+            const award=coinAward(w,coin);
+            w.amount+=award;
+            w.growth+=coin.loot?2:1;
+            if(w.player) burst(coin.x,coin.y,coin.loot?'#fff0aa':'#ffd36e',5);
+            coin.active=false;
+            removeCoinFromGrid(coin);
           }
-          coins.splice(i,1);
         }
       }
     }
     w.radius+=(targetRadius(w)-w.radius)*(1-Math.exp(-5*dt));
     while(w.segments.length<segmentCount(w)){
-      w.segments.push({...w.segments[w.segments.length-1]});
+      const tail=w.segments[w.segments.length-1];
+      w.segments.push({x:tail.x,y:tail.y,prevX:tail.x,prevY:tail.y});
     }
     const gap=w.radius*.66;
     w.segments[0].x=w.x;
     w.segments[0].y=w.y;
+    let minX=w.x,maxX=w.x,minY=w.y,maxY=w.y;
     for(let i=1;i<w.segments.length;i++){
       const a=w.segments[i-1],b=w.segments[i];
       const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);
@@ -1260,43 +1455,53 @@ function update(dt){
         b.x=a.x+dx/d*gap;
         b.y=a.y+dy/d*gap;
       }
+      if(b.x<minX) minX=b.x;
+      if(b.x>maxX) maxX=b.x;
+      if(b.y<minY) minY=b.y;
+      if(b.y>maxY) maxY=b.y;
     }
+    w.minX=minX;w.maxX=maxX;w.minY=minY;w.maxY=maxY;
     if(w.boosting&&Math.random()<dt*35){
       const tail=w.segments[w.segments.length-1];
       burst(tail.x,tail.y,w.color,1);
     }
   }
 
-  const deaths=new Map();
   buildCollisionGrid(living);
   for(const w of living){
     if(w.shield>0) continue;
     const collisionDistance=(w.radius+28)*.83;
-    const minCellX=Math.floor((w.x-collisionDistance)/128);
-    const maxCellX=Math.floor((w.x+collisionDistance)/128);
-    const minCellY=Math.floor((w.y-collisionDistance)/128);
-    const maxCellY=Math.floor((w.y+collisionDistance)/128);
-    for(let cellX=minCellX;cellX<=maxCellX&&!deaths.has(w);cellX++){
-      for(let cellY=minCellY;cellY<=maxCellY&&!deaths.has(w);cellY++){
-        const bucket=collisionGrid.get((cellX<<16)^cellY);
-        if(!bucket) continue;
+    const minCellX=clamp(Math.floor((w.x-collisionDistance)/GRID_CELL),0,GRID_COLS-1);
+    const maxCellX=clamp(Math.floor((w.x+collisionDistance)/GRID_CELL),0,GRID_COLS-1);
+    const minCellY=clamp(Math.floor((w.y-collisionDistance)/GRID_CELL),0,GRID_ROWS-1);
+    const maxCellY=clamp(Math.floor((w.y+collisionDistance)/GRID_CELL),0,GRID_ROWS-1);
+    for(let cellY=minCellY;cellY<=maxCellY&&!w.pendingDeathBy;cellY++){
+      for(let cellX=minCellX;cellX<=maxCellX&&!w.pendingDeathBy;cellX++){
+        const bucket=collisionBuckets[cellY*GRID_COLS+cellX];
         for(const entry of bucket){
           if(entry.worm===w) continue;
           const hitDistance=(w.radius+entry.worm.radius)*.83;
           const dx=w.x-entry.segment.x,dy=w.y-entry.segment.y;
           if(Math.abs(dx)>hitDistance||Math.abs(dy)>hitDistance) continue;
           if(dx*dx+dy*dy<hitDistance*hitDistance){
-            deaths.set(w,entry.worm);
+            w.pendingDeathBy=entry.worm;
             break;
           }
         }
       }
     }
   }
-  for(const [w,killer] of deaths){
+  for(const w of living){
+    if(!w.pendingDeathBy) continue;
+    const killer=w.pendingDeathBy;
+    w.pendingDeathBy=null;
     if(!w.player) killWorm(w,killer);
   }
-  if(deaths.has(player)) killWorm(player,deaths.get(player));
+  if(player.pendingDeathBy){
+    const killer=player.pendingDeathBy;
+    player.pendingDeathBy=null;
+    killWorm(player,killer);
+  }
 
   for(const w of living){
     if(!w.alive) continue;
@@ -1305,46 +1510,250 @@ function update(dt){
       else if(!w.player) killWorm(w,null);
     }
   }
-  worms=worms.filter(w=>w.alive||w.player);
+  let writeWorm=0,enemyCount=0;
+  for(const w of worms){
+    if(!w.alive&&!w.player) continue;
+    worms[writeWorm++]=w;
+    if(!w.player) enemyCount++;
+  }
+  worms.length=writeWorm;
 
   spawnTimer+=dt;
-  const enemyCount=worms.filter(w=>!w.player).length;
   if(settings.gameMode==='neonArena'&&enemyCount<botMinimum()){
     if(spawnTimer>=.35){
       spawnTimer=0;
       const refillCount=Math.min(3,botMinimum()-enemyCount);
-      for(let i=0;i<refillCount&&worms.filter(w=>!w.player).length<botLimit();i++){
+      for(let i=0;i<refillCount&&enemyCount<botLimit();i++){
         const before=worms.length;
         spawnBot();
         if(worms.length===before) break;
+        enemyCount++;
       }
     }
   }else if(spawnTimer>3){
     spawnTimer=0;
     if(enemyCount<botLimit()) spawnBot();
   }
-  if(coins.filter(c=>!c.loot).length<coinLimit(false)&&Math.random()<dt*30) addCoin();
+  let regularCoinCount=0,writeCoin=0;
+  for(const coin of coins){
+    if(!coin.active){coinPool.push(coin);continue}
+    coins[writeCoin++]=coin;
+    if(!coin.loot) regularCoinCount++;
+  }
+  coins.length=writeCoin;
+  if(regularCoinCount<coinLimit(false)&&Math.random()<dt*30) addCoin();
 
+  let writeParticle=0;
   for(const particle of particles){
+    particle.prevX=particle.x;
+    particle.prevY=particle.y;
     particle.x+=particle.vx*dt;
     particle.y+=particle.vy*dt;
     particle.vx*=Math.exp(-3*dt);
     particle.vy*=Math.exp(-3*dt);
     particle.life-=dt;
+    if(particle.life>0&&writeParticle<700) particles[writeParticle++]=particle;
+    else particlePool.push(particle);
   }
-  particles=particles.filter(p=>p.life>0);
-  if(particles.length>700) particles.splice(0,particles.length-700);
-  for(const effect of deathEffects) effect.life-=dt;
-  deathEffects=deathEffects.filter(effect=>effect.life>0);
+  particles.length=writeParticle;
+  let writeEffect=0;
+  for(const effect of deathEffects){
+    effect.life-=dt;
+    if(effect.life>0) deathEffects[writeEffect++]=effect;
+    else deathEffectPool.push(effect);
+  }
+  deathEffects.length=writeEffect;
 
+  cameraPrev.x=camera.x;
+  cameraPrev.y=camera.y;
   camera.x+=(player.x-camera.x)*(1-Math.exp(-10*dt));
   camera.y+=(player.y-camera.y)*(1-Math.exp(-10*dt));
-  updateStats();
+  statsTimer+=dt;
+  if(statsTimer>=.2){statsTimer=0;updateStats()}
 }
 
 function visible(x,y,pad=60){
-  return Math.abs(x-camera.x)<width/2+pad
-    &&Math.abs(y-camera.y)<height/2+pad;
+  return Math.abs(x-drawCameraX)<width/2+pad
+    &&Math.abs(y-drawCameraY)<height/2+pad;
+}
+function visibleBounds(minX,minY,maxX,maxY,pad=80){
+  return maxX>=drawCameraX-width/2-pad&&minX<=drawCameraX+width/2+pad
+    &&maxY>=drawCameraY-height/2-pad&&minY<=drawCameraY+height/2+pad;
+}
+function wormVisible(w,pad=100){
+  return visibleBounds(
+    Math.min(w.minX,w.prevMinX),Math.min(w.minY,w.prevMinY),
+    Math.max(w.maxX,w.prevMaxX),Math.max(w.maxY,w.prevMaxY),pad
+  );
+}
+function interpX(item){
+  return item.prevX+(item.x-item.prevX)*renderAlpha;
+}
+function interpY(item){
+  return item.prevY+(item.y-item.prevY)*renderAlpha;
+}
+function interpAngle(item){
+  return item.prevAngle+angleDiff(item.angle,item.prevAngle)*renderAlpha;
+}
+function createCanvasSurface(w,h){
+  let surface;
+  if(typeof OffscreenCanvas==='function') surface=new OffscreenCanvas(w,h);
+  else surface=document.createElement('canvas');
+  surface.width=w;
+  surface.height=h;
+  return surface;
+}
+function createHiDpiSurface(w,h){
+  const scale=clamp(dpr||1,1,2);
+  const surface=createCanvasSurface(Math.round(w*scale),Math.round(h*scale));
+  const surfaceCtx=surface.getContext('2d');
+  if(surfaceCtx&&scale!==1) surfaceCtx.scale(scale,scale);
+  return {surface,ctx:surfaceCtx,scale};
+}
+function cachedGradientSprite(cache,key,draw){
+  if(cache.has(key)) return cache.get(key);
+  const {surface,ctx:sprite}=createHiDpiSurface(64,64);
+  if(!sprite) return null;
+  draw(sprite);
+  cache.set(key,surface);
+  if(cache.size>128) cache.delete(cache.keys().next().value);
+  return surface;
+}
+function wormSegmentSprite(accent,color){
+  return cachedGradientSprite(glowSpriteCache,'segment|'+accent+'|'+color,sprite=>{
+    const gradient=sprite.createLinearGradient(0,8,0,56);
+    gradient.addColorStop(0,accent);
+    gradient.addColorStop(.32,color);
+    gradient.addColorStop(1,'#061422');
+    sprite.fillStyle=gradient;
+    sprite.beginPath();sprite.ellipse(32,32,21,27,0,0,TAU);sprite.fill();
+  });
+}
+function wormHeadSprite(accent,color){
+  return cachedGradientSprite(glowSpriteCache,'head|'+accent+'|'+color,sprite=>{
+    const gradient=sprite.createLinearGradient(0,8,0,56);
+    gradient.addColorStop(0,accent);
+    gradient.addColorStop(.25,color);
+    gradient.addColorStop(1,'#0b243d');
+    sprite.fillStyle=gradient;
+    sprite.beginPath();sprite.ellipse(32,32,26,22,0,0,TAU);sprite.fill();
+  });
+}
+function drawGlow(x,y,size,color,alpha=.28){
+  const sprite=cachedGradientSprite(glowSpriteCache,'glow|'+color,g=>{
+    const gradient=g.createRadialGradient(32,32,1,32,32,32);
+    gradient.addColorStop(0,color);
+    gradient.addColorStop(.28,color);
+    gradient.addColorStop(1,'transparent');
+    g.fillStyle=gradient;
+    g.fillRect(0,0,64,64);
+  });
+  if(!sprite) return;
+  ctx.save();
+  ctx.globalAlpha*=alpha;
+  ctx.drawImage(sprite,x-size/2,y-size/2,size,size);
+  ctx.restore();
+}
+function particleSprite(color){
+  if(particleSpriteCache.has(color)) return particleSpriteCache.get(color);
+  const {surface,ctx:sprite}=createHiDpiSurface(12,12);
+  if(!sprite) return null;
+  const gradient=sprite.createRadialGradient(6,6,0,6,6,6);
+  gradient.addColorStop(0,color);
+  gradient.addColorStop(.35,color);
+  gradient.addColorStop(1,'transparent');
+  sprite.fillStyle=gradient;
+  sprite.fillRect(0,0,12,12);
+  particleSpriteCache.set(color,surface);
+  if(particleSpriteCache.size>64) particleSpriteCache.delete(particleSpriteCache.keys().next().value);
+  return surface;
+}
+function ensureVignette(){
+  if(vignetteSprite) return vignetteSprite;
+  const w=Math.max(1,canvas.width),h=Math.max(1,canvas.height);
+  vignetteSprite=createCanvasSurface(w,h);
+  const vignetteCtx=vignetteSprite.getContext('2d');
+  if(!vignetteCtx) return null;
+  const gradient=vignetteCtx.createRadialGradient(
+    w/2,h/2,Math.min(w,h)*.25,
+    w/2,h/2,Math.max(w,h)*.7
+  );
+  gradient.addColorStop(0,'#00000000');
+  gradient.addColorStop(1,'#00000065');
+  vignetteCtx.fillStyle=gradient;
+  vignetteCtx.fillRect(0,0,w,h);
+  return vignetteSprite;
+}
+function gridPattern(mode,color){
+  const key=mode+'|'+color;
+  if(gridPatternCache.has(key)) return gridPatternCache.get(key);
+  const size=mode==='neonArena'?384:mode==='slitherGrid'?80
+    :(mode==='stars'||mode==='starfield')?512:mode==='rings'?240:mode==='circuit'?110
+    :mode==='hex'?258:60;
+  const surface=createCanvasSurface(size,size);
+  const tile=surface.getContext('2d');
+  if(!tile) return null;
+  tile.clearRect(0,0,size,size);
+  tile.strokeStyle=color;
+  tile.lineWidth=1;
+  tile.globalAlpha=mode==='neonArena' ? .22
+    :mode==='slitherGrid' ? .28
+    :(mode==='stars'||mode==='starfield') ? .28 : .12;
+  tile.beginPath();
+  const step=mode==='neonArena'?96:mode==='hex'?129:mode==='circuit'?110
+    :mode==='rings'?240:mode==='slitherGrid'?80:size;
+  for(let p=0;p<=size;p+=step){
+    tile.moveTo(p+.5,0);tile.lineTo(p+.5,size);
+    tile.moveTo(0,p+.5);tile.lineTo(size,p+.5);
+  }
+  if(['neonArena','slitherGrid','grid'].includes(mode)) tile.stroke();
+  else if(mode==='hex'){
+    tile.beginPath();
+    const r=43,dx=r*1.5,dy=Math.sqrt(3)*r;
+    for(let col=-1;col<3;col++){
+      for(let row=-1;row<3;row++){
+        const x=col*dx,y=row*dy+(col%2)*dy/2;
+        for(let k=0;k<6;k++){
+          const a=k*Math.PI/3,px=x+Math.cos(a)*r,py=y+Math.sin(a)*r;
+          if(k===0) tile.moveTo(px,py);else tile.lineTo(px,py);
+        }
+        tile.closePath();
+      }
+    }
+    tile.stroke();
+  }else if(mode==='rings'){
+    tile.beginPath();
+    for(const r of [35,65,95]) tile.arc(size/2,size/2,r,0,TAU);
+    tile.stroke();
+  }else if(mode==='circuit'){
+    tile.beginPath();
+    tile.moveTo(0,0);tile.lineTo(35,0);tile.lineTo(65,30);
+    tile.lineTo(65,75);tile.moveTo(10,85);tile.lineTo(35,85);tile.lineTo(50,100);
+    tile.stroke();
+    tile.beginPath();tile.arc(65,75,3,0,TAU);tile.fill();
+  }
+  if(mode==='slitherGrid'){
+    tile.globalAlpha=.45;
+    tile.fillStyle=color;
+    tile.beginPath();tile.arc(0,0,2.2,0,TAU);tile.fill();
+  }else if(mode==='neonArena'){
+    tile.globalAlpha=.18;
+    tile.fillStyle=color;
+    for(let i=0;i<9;i++){
+      const x=(i*173.7+37)%size,y=(i*97.3+19)%size;
+      tile.fillRect(x,y,i%7===0?2:1,i%7===0?2:1);
+    }
+  }else if(mode==='stars'||mode==='starfield'){
+    for(let i=0;i<72;i++){
+      const x=(i*173.17+31)%size,y=(i*317.73+47)%size;
+      tile.globalAlpha=i%9===0?.75:.2+(i%4)*.08;
+      tile.fillRect(x,y,i%9===0?2:1,i%9===0?2:1);
+    }
+  }
+  const pattern=ctx.createPattern(surface,'repeat');
+  gridPatternCache.set(key,pattern||null);
+  if(gridPatternCache.size>32) gridPatternCache.delete(gridPatternCache.keys().next().value);
+  return pattern||null;
 }
 function drawBackground(){
   const neonMode=settings.gameMode==='neonArena';
@@ -1354,7 +1763,7 @@ function drawBackground(){
   if(!performanceProfile().background){
     return;
   }
-  const left=camera.x-width/2,top=camera.y-height/2;
+  const left=drawCameraX-width/2,top=drawCameraY-height/2;
 
   ctx.save();
   ctx.translate(-left,-top);
@@ -1367,7 +1776,15 @@ function drawBackground(){
   ctx.globalAlpha=.12;
 
   const mode=neonMode?'neonArena':settings.background;
-  if(mode==='neonArena'){
+  const pattern=(mode==='neonArena'||mode==='slitherGrid'||mode==='grid'
+      ||mode==='stars'||mode==='starfield'||mode==='hex'||mode==='circuit'||mode==='rings')
+    ?gridPattern(mode,arenaAccent):null;
+  if(pattern){
+    // PERF: статический узор — одна текстура CanvasPattern, а не сотни отрезков каждый кадр.
+    ctx.globalAlpha=(mode==='stars'||mode==='starfield')?.85+.15*Math.sin(clock*1.1):1;
+    ctx.fillStyle=pattern;
+    ctx.fillRect(left,top,width,height);
+  }else if(mode==='neonArena'){
     ctx.globalAlpha=.22;
     ctx.lineWidth=1;
     ctx.beginPath();
@@ -1427,7 +1844,7 @@ function drawBackground(){
       ctx.lineTo(left+width,y);
     }
     ctx.stroke();
-  }else if(mode==='stars'){
+  }else if(mode==='stars'||mode==='starfield'){
     for(let i=0;i<650;i++){
       ctx.globalAlpha=.18+.16*Math.sin(i+clock);
       ctx.fillRect(
@@ -1545,11 +1962,12 @@ function drawBackground(){
   ctx.save();
   ctx.translate(-left,-top);
   ctx.strokeStyle=arenaAccent;
-  ctx.shadowColor=arenaAccent;
-  ctx.shadowBlur=24;
+  ctx.globalAlpha=.1;
+  ctx.lineWidth=24;
+  ctx.strokeRect(0,0,WORLD.w,WORLD.h);
+  ctx.globalAlpha=1;
   ctx.lineWidth=6;
   ctx.strokeRect(0,0,WORLD.w,WORLD.h);
-  ctx.shadowBlur=0;
   ctx.strokeStyle=arenaAccent+'28';
   ctx.lineWidth=30;
   ctx.strokeRect(0,0,WORLD.w,WORLD.h);
@@ -1561,8 +1979,58 @@ function drawBackground(){
   ctx.restore();
 }
 
+function coinSprite(kind,color,stroke,glow){
+  // PERF: текстура монеты (включая редкое свечение) кэшируется один раз и масштабируется.
+  const key=[kind,color,stroke,glow?1:0].join('|');
+  if(coinSpriteCache.has(key)) return coinSpriteCache.get(key);
+  const {surface,ctx:sprite}=createHiDpiSurface(64,64);
+  if(!sprite) return null;
+  const x=32,y=32,r=10;
+  sprite.fillStyle=color;
+  if(glow){sprite.shadowColor=color;sprite.shadowBlur=17}
+  sprite.beginPath();
+  if(kind==='ice'){
+    sprite.moveTo(x,y-r*1.35);sprite.lineTo(x+r*.82,y-r*.35);
+    sprite.lineTo(x+r*.48,y+r*1.05);sprite.lineTo(x-r*.48,y+r*1.05);
+    sprite.lineTo(x-r*.82,y-r*.35);sprite.closePath();
+  }else if(kind==='ember'){
+    sprite.moveTo(x,y-r*1.45);
+    sprite.bezierCurveTo(x+r*1.35,y-r*.55,x+r*.75,y+r*1.15,x,y+r);
+    sprite.bezierCurveTo(x-r*.75,y+r*1.15,x-r*1.35,y-r*.55,x,y-r*1.45);
+  }else if(kind==='shard'){
+    sprite.moveTo(x,y-r*1.5);sprite.lineTo(x+r,y-r*.1);
+    sprite.lineTo(x+r*.25,y+r*1.35);sprite.lineTo(x-r*.9,y+r*.5);sprite.closePath();
+  }else if(kind==='bubble'||kind==='arenaCoin'){
+    sprite.arc(x,y,r,0,TAU);
+  }else{
+    sprite.ellipse(x,y,r*1.15,r*.72,0,0,TAU);
+  }
+  sprite.fill();
+  sprite.shadowBlur=0;
+  sprite.strokeStyle=stroke;
+  sprite.lineWidth=1.3;
+  sprite.beginPath();
+  if(kind==='ice'){
+    sprite.moveTo(x-r*.55,y);sprite.lineTo(x,y-r*.7);
+    sprite.lineTo(x+r*.55,y);sprite.lineTo(x,y+r*.7);sprite.closePath();
+  }else sprite.arc(x,y,r*.65,0,TAU);
+  sprite.stroke();
+  sprite.fillStyle=kind==='arenaCoin'?'#fff3a8':'#fffbd7';
+  sprite.globalAlpha=.8;
+  if(kind==='arenaCoin'){
+    sprite.font='900 12px system-ui';
+    sprite.textAlign='center';sprite.textBaseline='middle';
+    sprite.fillText('$',x,y+.5);
+  }else if(kind==='ember'||kind==='bubble'){
+    sprite.beginPath();sprite.arc(x-r*.28,y-r*.3,r*.2,0,TAU);sprite.fill();
+  }else sprite.fillRect(x-1,y-r*.4,2,r*.8);
+  coinSpriteCache.set(key,surface);
+  if(coinSpriteCache.size>128) coinSpriteCache.delete(coinSpriteCache.keys().next().value);
+  return surface;
+}
 function drawCoin(coin){
-  if(!visible(coin.x,coin.y)) return;
+  const x=interpX(coin),y=interpY(coin);
+  if(!coin.active||!visible(x,y,26)) return;
   const rare=!coin.loot&&coin.value>=25;
   const r=(coin.loot?8:rare?8:coin.value>=10?6.5:5)
     +Math.sin(clock*3+coin.phase)*.5;
@@ -1570,54 +2038,19 @@ function drawCoin(coin){
   const neonMode=settings.gameMode==='neonArena';
   const color=coin.loot?'#ffe89f':neonMode?'#ffd84d':rare?biome.coinRareColor:biome.coinColor;
   const kind=neonMode?'arenaCoin':biome.coinKind||'leaf';
-
-  const simple=!performanceProfile().shadows;
-  if(!simple){ctx.shadowColor=color;ctx.shadowBlur=coin.loot||rare?17:8}
-  ctx.fillStyle=color;
-  ctx.beginPath();
-  if(kind==='ice'){
-    ctx.moveTo(coin.x,coin.y-r*1.35);ctx.lineTo(coin.x+r*.82,coin.y-r*.35);
-    ctx.lineTo(coin.x+r*.48,coin.y+r*1.05);ctx.lineTo(coin.x-r*.48,coin.y+r*1.05);
-    ctx.lineTo(coin.x-r*.82,coin.y-r*.35);ctx.closePath();
-  }else if(kind==='ember'){
-    ctx.moveTo(coin.x,coin.y-r*1.45);
-    ctx.bezierCurveTo(coin.x+r*1.35,coin.y-r*.55,coin.x+r*.75,coin.y+r*1.15,coin.x,coin.y+r);
-    ctx.bezierCurveTo(coin.x-r*.75,coin.y+r*1.15,coin.x-r*1.35,coin.y-r*.55,coin.x,coin.y-r*1.45);
-  }else if(kind==='shard'){
-    ctx.moveTo(coin.x,coin.y-r*1.5);ctx.lineTo(coin.x+r,coin.y-r*.1);
-    ctx.lineTo(coin.x+r*.25,coin.y+r*1.35);ctx.lineTo(coin.x-r*.9,coin.y+r*.5);ctx.closePath();
-  }else if(kind==='bubble'){
-    ctx.arc(coin.x,coin.y,r,0,TAU);
-  }else if(kind==='arenaCoin'){
-    ctx.arc(coin.x,coin.y,r,0,TAU);
-  }else{
-    ctx.ellipse(coin.x,coin.y,r*1.15,r*.72,Math.sin(clock+coin.phase)*.5,0,TAU);
-  }
-  ctx.fill();
-  if(!simple)ctx.shadowBlur=0;
-  ctx.strokeStyle=kind==='ice'?'#e8ffff':kind==='ember'?'#ff6b2e':kind==='shard'?'#f0d9ff':kind==='bubble'?'#eaff9e':kind==='arenaCoin'?'#fff1a0':'#a86b19';
-  ctx.lineWidth=1.3;
-  ctx.beginPath();
-  if(kind==='ice'){
-    ctx.moveTo(coin.x-r*.55,coin.y);ctx.lineTo(coin.x,coin.y-r*.7);
-    ctx.lineTo(coin.x+r*.55,coin.y);ctx.lineTo(coin.x,coin.y+r*.7);ctx.closePath();
-  }else{
-    ctx.arc(coin.x,coin.y,r*.65,0,TAU);
-  }
-  ctx.stroke();
-  ctx.fillStyle='#fffbd7';
-  ctx.globalAlpha=.8;
-  if(kind==='arenaCoin'){
-    ctx.fillStyle='#fff3a8';
-    ctx.font=`900 ${Math.max(7,r*1.15)}px system-ui`;
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText('$',coin.x,coin.y+.5);
-  }else if(kind==='ember'||kind==='bubble'){
-    ctx.beginPath();ctx.arc(coin.x-r*.28,coin.y-r*.3,r*.2,0,TAU);ctx.fill();
-  }else{
-    ctx.fillRect(coin.x-1,coin.y-r*.4,2,r*.8);
-  }
-  ctx.globalAlpha=1;
+  const stroke=kind==='ice'?'#e8ffff':kind==='ember'?'#ff6b2e'
+    :kind==='shard'?'#f0d9ff':kind==='bubble'?'#eaff9e'
+    :kind==='arenaCoin'?'#fff1a0':'#a86b19';
+  const sprite=coinSprite(kind,color,stroke,performanceProfile().shadows&&(coin.loot||rare));
+  if(!sprite) return;
+  const size=6.4*r;
+  if(kind==='leaf'){
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(Math.sin(clock+coin.phase)*.5);
+    ctx.drawImage(sprite,-size/2,-size/2,size,size);
+    ctx.restore();
+  }else ctx.drawImage(sprite,x-size/2,y-size/2,size,size);
 }
 
 function skinDetail(w,sr,i,visual=null){
@@ -1634,7 +2067,8 @@ function skinDetail(w,sr,i,visual=null){
     ctx.stroke();
     ctx.fillRect(-sr*.18,-sr*.18,sr*.35,sr*.35);
   }else if(w.skin==='dragon'){
-    for(const side of [-1,1]){
+    for(let sideIndex=0;sideIndex<2;sideIndex++){
+      const side=sideIndex===0?-1:1;
       ctx.beginPath();
       ctx.moveTo(-sr*.7,side*sr*.5);
       ctx.lineTo(-sr*.85,side*sr*1.32);
@@ -1655,7 +2089,8 @@ function skinDetail(w,sr,i,visual=null){
     ctx.ellipse(0,0,sr*.38,sr*.75,0,-Math.PI/2,Math.PI/2);
     ctx.stroke();
   }else if(w.skin==='tiger'){
-    for(const side of [-1,1]){
+    for(let sideIndex=0;sideIndex<2;sideIndex++){
+      const side=sideIndex===0?-1:1;
       ctx.beginPath();
       ctx.moveTo(-sr*.65,side*sr*.88);
       ctx.lineTo(sr*.45,side*sr*.55);
@@ -1713,120 +2148,131 @@ function skinDetail(w,sr,i,visual=null){
 
 
 function drawSimpleWorm(w){
-  if(!visible(w.x,w.y,100)) return;
+  if(!wormVisible(w,110)) return;
   const visual=wormPower(w);
   const r=w.radius;
+  const headX=interpX(w),headY=interpY(w),headAngle=interpAngle(w);
   ctx.save();
   ctx.globalAlpha=w.shield>0?.8+.15*Math.sin(clock*10):1;
   ctx.lineCap='round';
   ctx.beginPath();
+  let drawing=false;
   for(let i=0;i<w.segments.length;i+=performanceProfile().segmentStep){
     const s=w.segments[i];
-    if(i===0)ctx.moveTo(s.x,s.y);else ctx.lineTo(s.x,s.y);
+    const sx=interpX(s),sy=interpY(s);
+    if(!visible(sx,sy,r+18)){drawing=false;continue}
+    if(!drawing){ctx.moveTo(sx,sy);drawing=true}else ctx.lineTo(sx,sy);
   }
   ctx.strokeStyle=visual.color;
   ctx.lineWidth=r*2;
   ctx.stroke();
-  ctx.fillStyle=visual.accent;
-  ctx.beginPath();
-  ctx.arc(w.x,w.y,r*1.12,0,TAU);
-  ctx.fill();
-  ctx.fillStyle='#08151c';
-  ctx.beginPath();
-  ctx.arc(w.x+Math.cos(w.angle)*r*.55,w.y+Math.sin(w.angle)*r*.55,r*.18,0,TAU);
-  ctx.fill();
+  if(visible(headX,headY,r*2)){
+    ctx.fillStyle=visual.accent;
+    ctx.beginPath();
+    ctx.arc(headX,headY,r*1.12,0,TAU);
+    ctx.fill();
+    ctx.fillStyle='#08151c';
+    ctx.beginPath();
+    ctx.arc(headX+Math.cos(headAngle)*r*.55,headY+Math.sin(headAngle)*r*.55,r*.18,0,TAU);
+    ctx.fill();
+  }
   ctx.restore();
 
+  if(!visible(headX,headY,125)) return;
   const text=money(w.amount);
   ctx.font='700 13px system-ui';
   const tw=ctx.measureText(text).width;
-  const y=w.y-r-34;
+  const y=headY-r-34;
   ctx.fillStyle='#07111eee';
   ctx.strokeStyle=visual.active?visual.accent:visual.color;
   ctx.lineWidth=1;
   ctx.beginPath();
-  ctx.roundRect(w.x-tw/2-8,y,tw+16,23,7);
+  ctx.roundRect(headX-tw/2-8,y,tw+16,23,7);
   ctx.fill();
   ctx.stroke();
   ctx.textAlign='center';
   ctx.textBaseline='middle';
   ctx.fillStyle=visual.active?visual.accent:'#f4ffff';
-  ctx.fillText(text,w.x,y+11.5);
+  ctx.fillText(text,headX,y+11.5);
 }
 
 
 function drawWorm(w){
-  if(!w.alive) return;
+  if(!w.alive||!wormVisible(w,110)) return;
   if(!performanceProfile().details){
     drawSimpleWorm(w);
     return;
   }
   const r=w.radius;
   const visual=wormPower(w);
+  const headX=interpX(w),headY=interpY(w),headAngle=interpAngle(w);
   ctx.save();
   if(w.shield>0) ctx.globalAlpha=.65+.2*Math.sin(clock*12);
   ctx.lineCap='round';
   ctx.lineJoin='round';
   ctx.beginPath();
-  w.segments.forEach((s,i)=>{
-    if(i===0) ctx.moveTo(s.x,s.y);
-    else ctx.lineTo(s.x,s.y);
-  });
+  let drawing=false;
+  for(const s of w.segments){
+    const sx=interpX(s),sy=interpY(s);
+    if(!visible(sx,sy,r+25)){drawing=false;continue}
+    if(!drawing){ctx.moveTo(sx,sy);drawing=true}else ctx.lineTo(sx,sy);
+  }
   if(visual.active){
     const alpha=ctx.globalAlpha;
     ctx.globalAlpha=alpha*(.3+.12*Math.sin(clock*7));
     ctx.strokeStyle=visual.accent;
-    ctx.lineWidth=r*2+13;
-    ctx.shadowColor=visual.accent;
-    ctx.shadowBlur=visual.mode==='titan'?30:38;
+    ctx.lineWidth=r*2+28;
+    ctx.stroke();
+    ctx.globalAlpha=alpha*(.42+.12*Math.sin(clock*7));
+    ctx.lineWidth=r*2+16;
     ctx.stroke();
     ctx.globalAlpha=alpha;
   }
   ctx.strokeStyle='#0009';
   ctx.lineWidth=r*2+7;
   ctx.stroke();
+  const bodyAlpha=ctx.globalAlpha;
+  // Glow is preserved as two inexpensive translucent strokes instead of a costly
+  // per-frame shadow blur; the style stays luminous without changing detail level.
+  ctx.strokeStyle=visual.active?visual.accent:visual.color;
+  ctx.globalAlpha=bodyAlpha*(visual.active ? .2 : w.boosting ? .17 : .1);
+  ctx.lineWidth=r*2+(visual.active?30:22);
+  ctx.stroke();
+  ctx.globalAlpha=bodyAlpha*.24;
+  ctx.lineWidth=r*2+12;
+  ctx.stroke();
+  ctx.globalAlpha=bodyAlpha;
   ctx.strokeStyle=visual.color;
   ctx.lineWidth=r*2;
-  ctx.shadowColor=visual.active?visual.accent:visual.color;
-  ctx.shadowBlur=visual.active?(visual.mode==='storm'?30:24):w.boosting?27:14;
   ctx.stroke();
-  ctx.shadowBlur=0;
 
+  const segmentSprite=wormSegmentSprite(visual.accent,visual.color);
   for(let i=w.segments.length-1;i>=1;i-=2){
     const s=w.segments[i];
-    if(!visible(s.x,s.y,r+25)) continue;
+    const sx=interpX(s),sy=interpY(s);
+    if(!visible(sx,sy,r+25)) continue;
     const prev=w.segments[i-1];
+    const prevX=interpX(prev),prevY=interpY(prev);
     const sr=r*(.72+.28*(1-i/w.segments.length));
     ctx.save();
-    ctx.translate(s.x,s.y);
-    ctx.rotate(Math.atan2(prev.y-s.y,prev.x-s.x));
-    const grad=ctx.createLinearGradient(0,-sr,0,sr);
-    grad.addColorStop(0,visual.accent);
-    grad.addColorStop(.32,visual.color);
-    grad.addColorStop(1,'#061422');
-    ctx.fillStyle=grad;
-    ctx.beginPath();
-    ctx.ellipse(0,0,sr*.83,sr,0,0,TAU);
-    ctx.fill();
+    ctx.translate(sx,sy);
+    ctx.rotate(Math.atan2(prevY-sy,prevX-sx));
+    if(segmentSprite) ctx.drawImage(segmentSprite,-sr*.83,-sr,sr*1.66,sr*2);
     skinDetail(w,sr,i,visual);
     ctx.restore();
   }
 
+  if(visible(headX,headY,r*2.2)){
   ctx.save();
-  ctx.translate(w.x,w.y);
-  ctx.rotate(w.angle);
-  const head=ctx.createLinearGradient(0,-r,0,r);
-  head.addColorStop(0,visual.accent);
-  head.addColorStop(.25,visual.color);
-  head.addColorStop(1,'#0b243d');
-  ctx.fillStyle=head;
-  ctx.beginPath();
-  ctx.ellipse(0,0,r*1.28,r*1.06,0,0,TAU);
-  ctx.fill();
+  ctx.translate(headX,headY);
+  ctx.rotate(headAngle);
+  const head=wormHeadSprite(visual.accent,visual.color);
+  if(head) ctx.drawImage(head,-r*1.28,-r*1.06,r*2.56,r*2.12);
   if(settings.horns){
     ctx.strokeStyle=visual.accent;
     ctx.lineWidth=2;
-    for(const side of [-1,1]){
+    for(let sideIndex=0;sideIndex<2;sideIndex++){
+      const side=sideIndex===0?-1:1;
       ctx.beginPath();
       ctx.moveTo(r*.1,side*r*.75);
       ctx.lineTo(r*.7,side*r*1.35);
@@ -1834,7 +2280,8 @@ function drawWorm(w){
       ctx.stroke();
     }
   }
-  for(const side of [-1,1]){
+  for(let sideIndex=0;sideIndex<2;sideIndex++){
+    const side=sideIndex===0?-1:1;
     ctx.fillStyle=visual.active&&visual.mode==='storm'?'#d6fbff':'#eaffff';
     ctx.beginPath();
     ctx.ellipse(r*.48,side*r*.48,r*.3,r*.24,0,0,TAU);
@@ -1852,14 +2299,14 @@ function drawWorm(w){
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+  }
 
-  if(visual.active){
+  if(visual.active&&visible(headX,headY,r*2.5)){
     const alpha=ctx.globalAlpha;
+    drawGlow(headX,headY,r*4.8,visual.color,.32);
     if(visual.mode==='storm'){
       ctx.strokeStyle=visual.accent;
       ctx.lineWidth=2;
-      ctx.shadowColor=visual.color;
-      ctx.shadowBlur=18;
       for(let bolt=0;bolt<3;bolt++){
         const start=clock*2.2+bolt*TAU/3;
         const radius=r*1.8;
@@ -1867,60 +2314,56 @@ function drawWorm(w){
         for(let point=0;point<=5;point++){
           const a=start+point*.34;
           const wobble=Math.sin(clock*13+bolt*9+point*4)*r*.22;
-          const x=w.x+Math.cos(a)*(radius+wobble);
-          const y=w.y+Math.sin(a)*(radius+wobble);
+          const x=headX+Math.cos(a)*(radius+wobble);
+          const y=headY+Math.sin(a)*(radius+wobble);
           if(point===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
         }
         ctx.stroke();
       }
     }else if(visual.mode==='aurora'||visual.mode==='prism'){
       ctx.fillStyle=visual.accent;
-      ctx.shadowColor=visual.color;
-      ctx.shadowBlur=17;
       for(let spark=0;spark<7;spark++){
         const a=clock*1.3+spark*TAU/7;
         const orbit=r*2.15+Math.sin(clock*3+spark)*r*.22;
         ctx.globalAlpha=alpha*(.45+.45*Math.sin(clock*5+spark));
         ctx.beginPath();
-        ctx.arc(w.x+Math.cos(a)*orbit,w.y+Math.sin(a)*orbit,2.2,0,TAU);
+        ctx.arc(headX+Math.cos(a)*orbit,headY+Math.sin(a)*orbit,2.2,0,TAU);
         ctx.fill();
       }
       ctx.globalAlpha=alpha;
     }else{
       ctx.strokeStyle=visual.accent;
       ctx.lineWidth=2;
-      ctx.shadowColor='#ffd66b';
-      ctx.shadowBlur=20;
       ctx.beginPath();
-      ctx.ellipse(w.x,w.y,r*1.7,r*1.35,clock*.35,0,TAU);
+      ctx.ellipse(headX,headY,r*1.7,r*1.35,clock*.35,0,TAU);
       ctx.stroke();
     }
   }
   ctx.restore();
 
-  if(!visible(w.x,w.y,100)) return;
+  if(!visible(headX,headY,125)) return;
   const text=money(w.amount);
   ctx.font='700 14px system-ui';
   const tw=ctx.measureText(text).width;
-  const y=w.y-r-39;
+  const y=headY-r-39;
   ctx.fillStyle='#07111eee';
   ctx.strokeStyle=visual.active?visual.accent:w.boosting?'#ffe078':visual.color;
   ctx.lineWidth=1;
   ctx.beginPath();
-  ctx.roundRect(w.x-tw/2-11,y,tw+22,27,9);
+  ctx.roundRect(headX-tw/2-11,y,tw+22,27,9);
   ctx.fill();
   ctx.stroke();
   ctx.textAlign='center';
   ctx.textBaseline='middle';
   ctx.fillStyle=visual.active?visual.accent:w.boosting?'#ffe078':'#f4ffff';
-  ctx.fillText(text,w.x,y+13.5);
+  ctx.fillText(text,headX,y+13.5);
 
   if(w.player){
     ctx.fillStyle=visual.active?visual.accent:w.boosting?'#ffe078':visual.color;
     ctx.beginPath();
-    ctx.moveTo(w.x-4,y+29);
-    ctx.lineTo(w.x+4,y+29);
-    ctx.lineTo(w.x,y+34);
+    ctx.moveTo(headX-4,y+29);
+    ctx.lineTo(headX+4,y+29);
+    ctx.lineTo(headX,y+34);
     ctx.fill();
   }
 }
@@ -1931,14 +2374,15 @@ function drawDeathEffects(){
     const t=1-effect.life/effect.max;
     const alpha=1-t;
     const radius=12+82*t;
+    if(!visible(effect.x,effect.y,radius+30)) continue;
     ctx.save();
     ctx.globalAlpha=alpha;
     ctx.lineCap='round';
     ctx.lineJoin='round';
     if(effect.mode==='nova'){
       ctx.strokeStyle='#fff4bd';
-      ctx.shadowColor='#ff9b55';
-      ctx.shadowBlur=24;
+      drawGlow(effect.x,effect.y,radius*3,'#ff9b55',.16);
+      ctx.globalAlpha=alpha;
       ctx.lineWidth=3+4*alpha;
       for(let ring=0;ring<2;ring++){
         ctx.beginPath();
@@ -1952,8 +2396,8 @@ function drawDeathEffects(){
       ctx.fill();
     }else if(effect.mode==='shards'){
       ctx.strokeStyle='#e9fbff';
-      ctx.shadowColor='#69dfff';
-      ctx.shadowBlur=15;
+      drawGlow(effect.x,effect.y,radius*2.8,'#69dfff',.16);
+      ctx.globalAlpha=alpha;
       ctx.lineWidth=2;
       for(let shard=0;shard<10;shard++){
         const a=effect.seed+shard*TAU/10;
@@ -1968,8 +2412,8 @@ function drawDeathEffects(){
       }
     }else{
       ctx.strokeStyle='#d9fbff';
-      ctx.shadowColor='#72e8ff';
-      ctx.shadowBlur=20;
+      drawGlow(effect.x,effect.y,radius*2.8,'#72e8ff',.2);
+      ctx.globalAlpha=alpha;
       ctx.lineWidth=2.5;
       for(let bolt=0;bolt<4;bolt++){
         const angle=effect.seed+bolt*TAU/4;
@@ -2017,34 +2461,32 @@ function minimap(){
   }
 }
 function render(){
+  // PERF: только видимые элементы отправляются в Canvas; координаты сглажены между
+  // фиксированными 60-Гц тиками физики.
+  drawCameraX=cameraPrev.x+(camera.x-cameraPrev.x)*renderAlpha;
+  drawCameraY=cameraPrev.y+(camera.y-cameraPrev.y)*renderAlpha;
   ctx.setTransform(dpr,0,0,dpr,0,0);
   drawBackground();
   ctx.save();
-  ctx.translate(width/2-camera.x,height/2-camera.y);
+  ctx.translate(width/2-drawCameraX,height/2-drawCameraY);
 
-  for(const coin of coins) drawCoin(coin);
-  for(const w of worms) if(!w.player) drawWorm(w);
+  for(const coin of coins) if(coin.active) drawCoin(coin);
+  for(const w of worms) if(!w.player&&wormVisible(w,110)) drawWorm(w);
   drawWorm(player);
   if(performanceProfile().details) drawDeathEffects();
 
   for(const particle of particles){
+    const x=interpX(particle),y=interpY(particle);
+    if(!visible(x,y,10)) continue;
     ctx.globalAlpha=clamp(particle.life/particle.max,0,1);
-    ctx.fillStyle=particle.color;
-    ctx.beginPath();
-    ctx.arc(particle.x,particle.y,2.5,0,TAU);
-    ctx.fill();
+    const sprite=particleSprite(particle.color);
+    if(sprite) ctx.drawImage(sprite,x-6,y-6,12,12);
   }
   ctx.restore();
 
   if(performanceProfile().details){
-    const gradient=ctx.createRadialGradient(
-      width/2,height/2,Math.min(width,height)*.25,
-      width/2,height/2,Math.max(width,height)*.7
-    );
-    gradient.addColorStop(0,'#00000000');
-    gradient.addColorStop(1,'#00000065');
-    ctx.fillStyle=gradient;
-    ctx.fillRect(0,0,width,height);
+    const vignette=ensureVignette();
+    if(vignette) ctx.drawImage(vignette,0,0,width,height);
   }
   minimap();
 }
@@ -2064,6 +2506,7 @@ function frame(now){
   }else{
     accumulator=0;
   }
+  renderAlpha=accumulator/STEP;
   render();
   requestAnimationFrame(frame);
 }

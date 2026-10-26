@@ -27,6 +27,21 @@ button:hover{border-color:#54ffe0}
   position:fixed;top:18px;left:18px;padding:12px;
   font-size:12px;line-height:1.8;pointer-events:none
 }
+#steampunkHud{
+  position:fixed;top:12px;left:50%;right:auto;width:min(780px,calc(100vw - 28px));height:48px;
+  transform:translateX(-50%);
+  display:none;align-items:center;gap:14px;padding:8px 16px;
+  border:1px solid #1d7d6d;background:#031522ee;border-radius:24px;
+  box-shadow:0 0 18px #00ff7038,inset 0 0 20px #001e2d;
+  pointer-events:none;z-index:4
+}
+#steampunkHud.visible{display:flex}
+.hud-score,.hud-limit{font-weight:900;font-size:clamp(13px,2.4vw,22px);white-space:nowrap}
+.hud-score{color:#26ff4d;text-shadow:0 0 10px #00ff4d}
+.hud-limit{margin-left:auto;color:#a7c9d2}
+.hud-progress{height:30px;flex:1;min-width:60px;border-radius:18px;background:#071629;border:1px solid #193a47;overflow:hidden}
+.hud-progress-fill{height:100%;width:0;border-radius:inherit;background:#12f33b;box-shadow:0 0 16px #00ff48;transition:width .12s linear}
+#steampunkHud.over-limit .hud-progress-fill{background:#ffe51d;box-shadow:0 0 16px #ffe51d}
 #hint{
   position:fixed;bottom:15px;left:15px;right:15px;text-align:center;
   font-size:12px;color:#bfd0d8;text-shadow:0 2px 4px black;pointer-events:none
@@ -106,6 +121,7 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
   #mobileControls{display:block;position:fixed;inset:0;z-index:3;pointer-events:none}
   #stats{top:calc(10px + env(safe-area-inset-top));left:10px;padding:8px 10px;font-size:11px}
   #gear{top:calc(10px + env(safe-area-inset-top));right:10px}
+  #steampunkHud{top:calc(8px + env(safe-area-inset-top));width:calc(100vw - 20px);height:44px;padding:5px 10px}
   #hint{display:none}
 }
 @media (pointer:coarse) and (max-width:430px){
@@ -229,6 +245,11 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
   Уничтожено: <b id="kills">0</b><br>
   Соперников: <b id="bots">0</b>
 </div>
+<div id="steampunkHud" aria-hidden="true">
+  <span id="hudScore" class="hud-score">0 VES</span>
+  <div class="hud-progress"><div id="hudProgressFill" class="hud-progress-fill"></div></div>
+  <span id="hudLimit" class="hud-limit">30,000 VES</span>
+</div>
 <button id="gear" aria-label="Настройки">⚙</button>
 <div id="hint">
   Мышь — направление · ЛКМ — ускорение: −1 за 3 сек · Зеленая граница — забрать выигрыш
@@ -255,6 +276,7 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
     <div class="setting-card"><h3>Внешний вид червяка</h3>
       <label for="skinPreset">Готовый скин</label><select id="skinPreset"></select><div id="skinPreview" class="preview"></div>
       <label for="skin">Узор</label><select id="skin"><option value="armor">Неоновая броня</option><option value="dragon">Кибердракон</option><option value="plasma">Плазменный поток</option><option value="tiger">Неоновый тигр</option><option value="crystal">Кристальная чешуя</option><option value="galaxy">Галактика</option><option value="circuit">Киберсхема</option><option value="pearl">Жемчужный</option></select>
+      <label for="bodySkin">Стиль тела</label><select id="bodySkin"><option value="random">Случайный скин при старте</option><option value="neon">Neon — яркое свечение</option><option value="rainbow">Rainbow — плавная радуга</option><option value="striped">Striped — цветные полосы</option><option value="bordered">Bordered — контрастная обводка</option></select>
       <div class="row"><div><label for="wormColor">Основной цвет</label><input id="wormColor" type="color"></div><div><label for="wormAccent">Цвет деталей</label><input id="wormAccent" type="color"></div></div>
       <label class="check" for="horns"><input id="horns" type="checkbox"> Рожки у червяков</label>
     </div>
@@ -291,6 +313,14 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
     <div class="setting-card wide"><h3>Фон и эффекты</h3>
       <label for="background">Узор фона</label><select id="background"><option value="hex">Неоновые соты</option><option value="grid">Киберсетка</option><option value="slitherGrid">Классическая сетка Slither.io</option><option value="stars">Звездное поле</option><option value="dots">Светящиеся точки</option><option value="waves">Энергетические волны</option><option value="circuit">Электронные дорожки</option><option value="rings">Орбитальные кольца</option><option value="plain">Однотонный</option></select>
       <div class="row"><div><label for="bgColor">Цвет фона</label><input id="bgColor" type="color"></div><div><label for="bgAccent">Цвет узора</label><input id="bgAccent" type="color"></div></div><div id="bgPreview" class="preview"></div>
+      <label for="backgroundImage">Своя текстура фона</label><input id="backgroundImage" type="file" accept="image/*">
+      <p class="small">Можно прикрепить изображение шестерёнок или любую другую текстуру. Она будет зациклена с учётом камеры и останется только визуальным слоем.</p>
+    </div>
+    <div class="setting-card wide"><h3>HUD и стиль видео</h3>
+      <label class="check" for="hudEnabled"><input id="hudEnabled" type="checkbox"> Верхняя панель в стиле видео</label>
+      <div class="row"><div><label for="hudLimitSetting">Лимит / рекорд</label><input id="hudLimitSetting" type="number" min="1" max="1000000000" step="1000"></div><div><label for="hudCurrency">Валюта HUD</label><input id="hudCurrency" type="text" maxlength="8" placeholder="VES"></div></div>
+      <label class="check" for="videoStyle"><input id="videoStyle" type="checkbox"> Стимпанк-стиль видео: шестерёнки, VES и неон</label>
+      <p class="small">Плашки над червяками используют текущий счёт и эту валюту. Полоса заполняется относительно установленного лимита.</p>
     </div>
   </div>
   <div class="buttons"><button id="closeAdmin">Продолжить</button><button id="newGame" class="primary">Применить и начать заново</button></div>
@@ -377,6 +407,8 @@ const SKIN_PRESETS={
   neon:{name:'Ультрафиолет',skin:'circuit',wormColor:'#a376ec',wormAccent:'#78f1ed'}
 };
 const BOT_SKIN_PRESETS=Object.values(SKIN_PRESETS);
+const BODY_SKIN_PRESETS=['neon','rainbow','striped','bordered'];
+const STRIPE_COLORS=['#24efff','#ffd92f','#ff3d67','#65ff9a'];
 
 const settings={
   startAmount:1000,
@@ -402,11 +434,16 @@ const settings={
   bgAccent:'#52e7b2',
   skinPreset:'emerald',
   skin:'armor',
+  bodySkin:'random',
   wormColor:'#4ee2ad',
   wormAccent:'#ddfff2',
   horns:true,
   currencyMode:'dollar',
-  customCurrency:'₽'
+  customCurrency:'₽',
+  hudEnabled:true,
+  hudLimit:30000,
+  hudCurrency:'VES',
+  videoStyle:true
 };
 
 try{
@@ -442,6 +479,9 @@ settings.magnetStrength=clamp(Number(settings.magnetStrength)||480,180,900);
 settings.powerThreshold=clamp(Math.floor(Number(settings.powerThreshold)||20000),100,1000000000);
 settings.deathEffectMode=['mix','lightning','nova','shards'].includes(settings.deathEffectMode)?settings.deathEffectMode:'mix';
 settings.powerMode=['aurora','titan','prism','storm'].includes(settings.powerMode)?settings.powerMode:'aurora';
+settings.bodySkin=['random','neon','rainbow','striped','bordered'].includes(settings.bodySkin)?settings.bodySkin:'random';
+settings.hudLimit=clamp(Math.floor(Number(settings.hudLimit)||30000),1,1000000000);
+settings.hudCurrency=String(settings.hudCurrency||'VES').slice(0,8);
 
 const BOT_PROFILES={
   easy:{
@@ -527,6 +567,8 @@ let livingWorms=[],particlePool=[],deathEffectPool=[],coinPool=[],collisionEntri
 let collisionEntryUsed=0;
 let gridPatternCache=new Map(),coinSpriteCache=new Map(),glowSpriteCache=new Map();
 let particleSpriteCache=new Map(),vignetteSprite=null;
+let customBackgroundImage=null,customBackgroundTilePattern=null,customBackgroundUrl='';
+let steampunkPattern=null;
 let ended=false,paused=false,kills=0,clock=0,spawnTimer=0,statsTimer=0;
 let last=performance.now(),accumulator=0,renderAlpha=1,drawCameraX=0,drawCameraY=0;
 
@@ -579,6 +621,9 @@ function syncUI(){
     if(input.type==='checkbox') input.checked=settings[key];
     else input.value=settings[key];
   }
+  $('hudLimitSetting').value=settings.hudLimit;
+  $('hudCurrency').value=settings.hudCurrency;
+  $('videoStyle').checked=settings.videoStyle;
   $('customCurrency').disabled=settings.currencyMode!=='custom';
   $('magnetRadiusValue').textContent=Math.round(settings.magnetRadius)+' ед.';
   $('magnetStrengthValue').textContent=Math.round(settings.magnetStrength)+' ед./с';
@@ -609,6 +654,7 @@ function applyPlayerLook(){
   player.color=settings.wormColor;
   player.accent=settings.wormAccent;
   player.skin=settings.skin;
+  player.bodySkin=randomBodySkin(true);
 }
 for(const key of Object.keys(settings)){
   const control=$(key);
@@ -628,6 +674,11 @@ for(const key of Object.keys(settings)){
     }else if(key==='powerThreshold'){
       if(input.value===''||!Number.isFinite(Number(input.value))) return;
       settings.powerThreshold=clamp(Math.floor(Number(input.value)),100,1000000000);
+    }else if(key==='hudLimitSetting'){
+      if(input.value===''||!Number.isFinite(Number(input.value))) return;
+      settings.hudLimit=clamp(Math.floor(Number(input.value)),1,1000000000);
+    }else if(key==='hudCurrency'){
+      settings.hudCurrency=String(input.value||'VES').slice(0,8);
     }else if(key==='nearbySpawnRadius'){
       settings.nearbySpawnRadius=clamp(Number(input.value)||560,260,900);
     }else if(key==='performanceMode'){
@@ -665,6 +716,25 @@ for(const key of Object.keys(settings)){
     if(key!=='startAmount') syncUI();
   });
 }
+$('backgroundImage').addEventListener('change',event=>{
+  const file=event.target.files?.[0];
+  if(!file||typeof Image==='undefined') return;
+  if(customBackgroundUrl) URL.revokeObjectURL(customBackgroundUrl);
+  customBackgroundUrl=URL.createObjectURL(file);
+  const image=new Image();
+  image.onload=()=>{
+    customBackgroundImage=image;
+    customBackgroundTilePattern=null;
+    gridPatternCache.clear();
+  };
+  image.src=customBackgroundUrl;
+});
+$('hudLimitSetting').addEventListener('input',event=>{
+  const value=Number(event.target.value);
+  if(Number.isFinite(value)) settings.hudLimit=clamp(Math.floor(value),1,1000000000);
+  saveSettings();
+  updateHud();
+});
 $('startAmount').addEventListener('change',syncUI);
 syncUI();
 
@@ -693,6 +763,8 @@ function resize(){
   coinSpriteCache.clear();
   glowSpriteCache.clear();
   particleSpriteCache.clear();
+  customBackgroundTilePattern=null;
+  steampunkPattern=null;
   vignetteSprite=null;
   canvas.style.width=width+'px';
   canvas.style.height=height+'px';
@@ -936,6 +1008,12 @@ function botShape(neonMode){
   if(!neonMode) return {length:rand(.92,1.08),body:rand(.94,1.06)};
   return BOT_SHAPES[Math.floor(rand(0,BOT_SHAPES.length))];
 }
+function randomBodySkin(isPlayer){
+  const selected=isPlayer?settings.bodySkin:BODY_SKIN_PRESETS[Math.floor(rand(0,BODY_SKIN_PRESETS.length))];
+  return selected==='random'
+    ?BODY_SKIN_PRESETS[Math.floor(rand(0,BODY_SKIN_PRESETS.length))]
+    :selected;
+}
 function randomBotAmount(){
   if(settings.gameMode!=='neonArena') return Math.floor(rand(30,65));
   const roll=Math.random();
@@ -958,6 +1036,7 @@ function makeWorm(x,y,isPlayer=false){
     color:isPlayer?settings.wormColor:look.wormColor,
     accent:isPlayer?settings.wormAccent:look.wormAccent,
     skin:isPlayer?settings.skin:look.skin,
+    bodySkin:randomBodySkin(isPlayer),
     speed:isPlayer?168:rand(104,124),
     lengthScale:shape.length,
     bodyScale:shape.body,
@@ -1205,6 +1284,28 @@ function updateStats(){
   let bots=0;
   for(const worm of worms) if(worm.alive&&!worm.player) bots++;
   $('bots').textContent=bots;
+  updateHud();
+}
+function scoreLabel(value){
+  if(settings.videoStyle) return `${digits(value)} ${settings.hudCurrency||'VES'}`;
+  return money(value);
+}
+function updateHud(){
+  const hud=$('steampunkHud');
+  if(!hud||!player) return;
+  if(settings.hudEnabled) hud.classList.add('visible');
+  else hud.classList.remove('visible');
+  $('stats').style.display=settings.videoStyle?'none':'';
+  $('gear').style.top=settings.hudEnabled?'82px':'';
+  if(IS_COARSE_POINTER) $('gear').style.top=settings.hudEnabled?'66px':'';
+  if(!settings.hudEnabled) return;
+  const score=Math.max(0,player.amount);
+  const limit=Math.max(1,settings.hudLimit);
+  $('hudScore').textContent=scoreLabel(score);
+  $('hudLimit').textContent=`${digits(limit)} ${settings.hudCurrency||'VES'}`;
+  $('hudProgressFill').style.width=`${clamp(score/limit*100,0,100)}%`;
+  if(score>limit) hud.classList.add('over-limit');
+  else hud.classList.remove('over-limit');
 }
 function finish(win){
   if(ended) return;
@@ -1654,6 +1755,27 @@ function drawGlow(x,y,size,color,alpha=.28){
   ctx.drawImage(sprite,x-size/2,y-size/2,size,size);
   ctx.restore();
 }
+function drawCurrencySpark(x,y,size,color,phase){
+  const pulse=.82+.18*Math.sin(clock*4+phase);
+  ctx.save();
+  ctx.globalAlpha=.82*pulse;
+  ctx.fillStyle=color;
+  ctx.strokeStyle='#fff4e8';
+  ctx.lineWidth=.7;
+  ctx.beginPath();
+  ctx.arc(x,y,Math.max(1.5,size*.22),0,TAU);
+  ctx.fill();
+  ctx.globalAlpha=.5*pulse;
+  ctx.beginPath();
+  ctx.arc(x,y,Math.max(2.5,size*.42),0,TAU);
+  ctx.stroke();
+  ctx.globalAlpha=.75*pulse;
+  ctx.fillStyle='#fff7df';
+  ctx.beginPath();
+  ctx.arc(x-size*.14,y-size*.14,Math.max(.7,size*.1),0,TAU);
+  ctx.fill();
+  ctx.restore();
+}
 function particleSprite(color){
   if(particleSpriteCache.has(color)) return particleSpriteCache.get(color);
   const {surface,ctx:sprite}=createHiDpiSurface(12,12);
@@ -1755,6 +1877,75 @@ function gridPattern(mode,color){
   if(gridPatternCache.size>32) gridPatternCache.delete(gridPatternCache.keys().next().value);
   return pattern||null;
 }
+function createSteampunkPattern(){
+  if(steampunkPattern) return steampunkPattern;
+  const size=720;
+  const surface=createCanvasSurface(size,size);
+  const tile=surface.getContext('2d');
+  if(!tile) return null;
+  tile.fillStyle='#071820';
+  tile.fillRect(0,0,size,size);
+  tile.fillStyle='#0b2930';
+  for(let y=0;y<size;y+=120) for(let x=0;x<size;x+=120){
+    tile.fillRect(x+3,y+3,114,114);
+    tile.strokeStyle='#17343a';
+    tile.lineWidth=3;
+    tile.strokeRect(x+8,y+8,104,104);
+  }
+  const gear=(cx,cy,r,color,alpha=.85)=>{
+    tile.save();
+    tile.globalAlpha=alpha;
+    tile.translate(cx,cy);
+    tile.fillStyle=color;
+    tile.strokeStyle='#241e17';
+    tile.lineWidth=5;
+    tile.beginPath();
+    const teeth=12;
+    for(let i=0;i<teeth*2;i++){
+      const a=i*Math.PI/teeth;
+      const rr=i%2?r:r*1.15;
+      const px=Math.cos(a)*rr,py=Math.sin(a)*rr;
+      if(i===0) tile.moveTo(px,py); else tile.lineTo(px,py);
+    }
+    tile.closePath();tile.fill();tile.stroke();
+    tile.fillStyle='#15252a';
+    tile.beginPath();tile.arc(0,0,r*.68,0,TAU);tile.fill();
+    tile.strokeStyle='#8c6a38';
+    tile.lineWidth=4;
+    tile.beginPath();tile.arc(0,0,r*.42,0,TAU);tile.stroke();
+    tile.fillStyle='#b98035';
+    tile.beginPath();tile.arc(0,0,r*.14,0,TAU);tile.fill();
+    tile.restore();
+  };
+  gear(150,155,105,'#87602d');
+  gear(560,170,72,'#9c7033');
+  gear(420,500,145,'#745326');
+  gear(70,585,68,'#8d642d');
+  gear(650,625,95,'#93672e');
+  tile.lineCap='round';
+  tile.lineWidth=24;
+  tile.strokeStyle='#603b28';
+  tile.beginPath();
+  tile.moveTo(0,300);tile.lineTo(110,300);tile.lineTo(145,350);
+  tile.moveTo(500,0);tile.lineTo(500,80);tile.lineTo(575,115);
+  tile.moveTo(265,720);tile.lineTo(265,650);tile.lineTo(335,610);
+  tile.stroke();
+  tile.lineWidth=12;
+  tile.strokeStyle='#b46a3b';
+  tile.stroke();
+  for(let i=0;i<30;i++){
+    const x=(i*137+41)%size,y=(i*211+27)%size;
+    tile.fillStyle=i%4===0?'#ff3c4d':'#b51e35';
+    tile.beginPath();tile.arc(x,y,i%4===0?6:3.5,0,TAU);tile.fill();
+  }
+  steampunkPattern=ctx.createPattern(surface,'repeat');
+  return steampunkPattern;
+}
+function customBackgroundPattern(){
+  if(!customBackgroundImage) return null;
+  if(!customBackgroundTilePattern) customBackgroundTilePattern=ctx.createPattern(customBackgroundImage,'repeat');
+  return customBackgroundTilePattern;
+}
 function drawBackground(){
   const neonMode=settings.gameMode==='neonArena';
   const arenaAccent=neonMode?'#2ad8e9':settings.bgAccent;
@@ -1775,11 +1966,25 @@ function drawBackground(){
   ctx.lineWidth=1;
   ctx.globalAlpha=.12;
 
-  const mode=neonMode?'neonArena':settings.background;
+  const mode=settings.videoStyle?'steampunk':neonMode?'neonArena':settings.background;
+  const customPattern=customBackgroundPattern();
+  if(customPattern){
+    ctx.globalAlpha=.78;
+    ctx.fillStyle=customPattern;
+    ctx.fillRect(left,top,width,height);
+  }
+  if(settings.videoStyle&&!customPattern){
+    const pattern=createSteampunkPattern();
+    if(pattern){
+      ctx.globalAlpha=1;
+      ctx.fillStyle=pattern;
+      ctx.fillRect(left,top,width,height);
+    }
+  }
   const pattern=(mode==='neonArena'||mode==='slitherGrid'||mode==='grid'
       ||mode==='stars'||mode==='starfield'||mode==='hex'||mode==='circuit'||mode==='rings')
     ?gridPattern(mode,arenaAccent):null;
-  if(pattern){
+  if(pattern&&!settings.videoStyle&&!customPattern){
     // PERF: статический узор — одна текстура CanvasPattern, а не сотни отрезков каждый кадр.
     ctx.globalAlpha=(mode==='stars'||mode==='starfield')?.85+.15*Math.sin(clock*1.1):1;
     ctx.fillStyle=pattern;
@@ -2036,14 +2241,19 @@ function drawCoin(coin){
     +Math.sin(clock*3+coin.phase)*.5;
   const biome=BIOME_PRESETS[settings.biome]||BIOME_PRESETS.meadow;
   const neonMode=settings.gameMode==='neonArena';
-  const color=coin.loot?'#ffe89f':neonMode?'#ffd84d':rare?biome.coinRareColor:biome.coinColor;
-  const kind=neonMode?'arenaCoin':biome.coinKind||'leaf';
+  const color=coin.loot
+    ?(settings.videoStyle?'#ffd83d':'#ffe89f')
+    :(settings.videoStyle?'#ff263d':neonMode?'#ffd84d':rare?biome.coinRareColor:biome.coinColor);
+  const kind=settings.videoStyle?'bubble':neonMode?'arenaCoin':biome.coinKind||'leaf';
   const stroke=kind==='ice'?'#e8ffff':kind==='ember'?'#ff6b2e'
-    :kind==='shard'?'#f0d9ff':kind==='bubble'?'#eaff9e'
+    :kind==='shard'?'#f0d9ff':kind==='bubble'?(settings.videoStyle?'#ff8b91':'#eaff9e')
     :kind==='arenaCoin'?'#fff1a0':'#a86b19';
-  const sprite=coinSprite(kind,color,stroke,performanceProfile().shadows&&(coin.loot||rare));
+  const sprite=coinSprite(kind,color,stroke,performanceProfile().shadows&&!settings.videoStyle&&(coin.loot||rare));
   if(!sprite) return;
   const size=6.4*r;
+  if(settings.videoStyle){
+    drawCurrencySpark(x+Math.cos(coin.phase+clock)*r*.7,y+Math.sin(coin.phase+clock)*r*.7,r*.9,color,coin.phase);
+  }
   if(kind==='leaf'){
     ctx.save();
     ctx.translate(x,y);
@@ -2145,6 +2355,33 @@ function skinDetail(w,sr,i,visual=null){
     ctx.stroke();
   }
 }
+function bodySegmentVisual(w,index,visual){
+  const style=w.bodySkin||'neon';
+  const result=w.segmentVisual||(w.segmentVisual={color:visual.color,accent:visual.accent,border:false});
+  if(style==='rainbow'){
+    const hue=(index/Math.max(1,w.segments.length-1)*320+clock*28)%360;
+    result.color=`hsl(${hue} 92% 60%)`;
+    result.accent=`hsl(${(hue+48)%360} 100% 82%)`;
+    result.border=false;
+    return result;
+  }
+  if(style==='striped'){
+    result.color=STRIPE_COLORS[Math.floor(index/2)%STRIPE_COLORS.length];
+    result.accent='#ecffff';
+    result.border=false;
+    return result;
+  }
+  if(style==='bordered'){
+    result.color=visual.color;
+    result.accent=visual.accent;
+    result.border=true;
+    return result;
+  }
+  result.color=visual.color;
+  result.accent=visual.accent;
+  result.border=false;
+  return result;
+}
 
 
 function drawSimpleWorm(w){
@@ -2179,12 +2416,12 @@ function drawSimpleWorm(w){
   ctx.restore();
 
   if(!visible(headX,headY,125)) return;
-  const text=money(w.amount);
+  const text=scoreLabel(w.amount);
   ctx.font='700 13px system-ui';
   const tw=ctx.measureText(text).width;
   const y=headY-r-34;
-  ctx.fillStyle='#07111eee';
-  ctx.strokeStyle=visual.active?visual.accent:visual.color;
+  ctx.fillStyle=settings.videoStyle?'#031b13ee':'#07111eee';
+  ctx.strokeStyle=settings.videoStyle?'#14ff4a':visual.active?visual.accent:visual.color;
   ctx.lineWidth=1;
   ctx.beginPath();
   ctx.roundRect(headX-tw/2-8,y,tw+16,23,7);
@@ -2192,7 +2429,7 @@ function drawSimpleWorm(w){
   ctx.stroke();
   ctx.textAlign='center';
   ctx.textBaseline='middle';
-  ctx.fillStyle=visual.active?visual.accent:'#f4ffff';
+  ctx.fillStyle=settings.videoStyle?'#20ff4d':visual.active?visual.accent:'#f4ffff';
   ctx.fillText(text,headX,y+11.5);
 }
 
@@ -2246,7 +2483,6 @@ function drawWorm(w){
   ctx.lineWidth=r*2;
   ctx.stroke();
 
-  const segmentSprite=wormSegmentSprite(visual.accent,visual.color);
   for(let i=w.segments.length-1;i>=1;i-=2){
     const s=w.segments[i];
     const sx=interpX(s),sy=interpY(s);
@@ -2254,11 +2490,21 @@ function drawWorm(w){
     const prev=w.segments[i-1];
     const prevX=interpX(prev),prevY=interpY(prev);
     const sr=r*(.72+.28*(1-i/w.segments.length));
+    const segmentVisual=bodySegmentVisual(w,i,visual);
+    const segmentSprite=wormSegmentSprite(segmentVisual.accent,segmentVisual.color);
     ctx.save();
     ctx.translate(sx,sy);
     ctx.rotate(Math.atan2(prevY-sy,prevX-sx));
     if(segmentSprite) ctx.drawImage(segmentSprite,-sr*.83,-sr,sr*1.66,sr*2);
+    if(segmentVisual.border){
+      ctx.strokeStyle=segmentVisual.accent;
+      ctx.lineWidth=Math.max(1.5,sr*.16);
+      ctx.beginPath();ctx.ellipse(0,0,sr*.9,sr*1.05,0,0,TAU);ctx.stroke();
+    }
+    const originalAccent=visual.accent;
+    visual.accent=segmentVisual.accent;
     skinDetail(w,sr,i,visual);
+    visual.accent=originalAccent;
     ctx.restore();
   }
 
@@ -2284,11 +2530,11 @@ function drawWorm(w){
     const side=sideIndex===0?-1:1;
     ctx.fillStyle=visual.active&&visual.mode==='storm'?'#d6fbff':'#eaffff';
     ctx.beginPath();
-    ctx.ellipse(r*.48,side*r*.48,r*.3,r*.24,0,0,TAU);
+    ctx.ellipse(r*.48,side*r*.48,r*.38,r*.31,0,0,TAU);
     ctx.fill();
     ctx.fillStyle='#05121c';
     ctx.beginPath();
-    ctx.arc(r*.6,side*r*.48,r*.13,0,TAU);
+    ctx.arc(r*.67,side*r*.48,r*.16,0,TAU);
     ctx.fill();
   }
   ctx.fillStyle=visual.accent;
@@ -2342,12 +2588,12 @@ function drawWorm(w){
   ctx.restore();
 
   if(!visible(headX,headY,125)) return;
-  const text=money(w.amount);
+  const text=scoreLabel(w.amount);
   ctx.font='700 14px system-ui';
   const tw=ctx.measureText(text).width;
   const y=headY-r-39;
-  ctx.fillStyle='#07111eee';
-  ctx.strokeStyle=visual.active?visual.accent:w.boosting?'#ffe078':visual.color;
+  ctx.fillStyle=settings.videoStyle?'#031b13ee':'#07111eee';
+  ctx.strokeStyle=settings.videoStyle?'#14ff4a':visual.active?visual.accent:w.boosting?'#ffe078':visual.color;
   ctx.lineWidth=1;
   ctx.beginPath();
   ctx.roundRect(headX-tw/2-11,y,tw+22,27,9);
@@ -2355,7 +2601,7 @@ function drawWorm(w){
   ctx.stroke();
   ctx.textAlign='center';
   ctx.textBaseline='middle';
-  ctx.fillStyle=visual.active?visual.accent:w.boosting?'#ffe078':'#f4ffff';
+  ctx.fillStyle=settings.videoStyle?'#20ff4d':visual.active?visual.accent:w.boosting?'#ffe078':'#f4ffff';
   ctx.fillText(text,headX,y+13.5);
 
   if(w.player){

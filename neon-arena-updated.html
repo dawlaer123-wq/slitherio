@@ -567,8 +567,10 @@ let livingWorms=[],particlePool=[],deathEffectPool=[],coinPool=[],collisionEntri
 let collisionEntryUsed=0;
 let gridPatternCache=new Map(),coinSpriteCache=new Map(),glowSpriteCache=new Map();
 let particleSpriteCache=new Map(),vignetteSprite=null;
+let currencySparkCache=new Map();
 let customBackgroundImage=null,customBackgroundTilePattern=null,customBackgroundUrl='';
 let steampunkPattern=null;
+let labelSpriteCache=new Map();
 let ended=false,paused=false,kills=0,clock=0,spawnTimer=0,statsTimer=0;
 let last=performance.now(),accumulator=0,renderAlpha=1,drawCameraX=0,drawCameraY=0;
 
@@ -763,6 +765,8 @@ function resize(){
   coinSpriteCache.clear();
   glowSpriteCache.clear();
   particleSpriteCache.clear();
+  currencySparkCache.clear();
+  labelSpriteCache.clear();
   customBackgroundTilePattern=null;
   steampunkPattern=null;
   vignetteSprite=null;
@@ -1756,25 +1760,57 @@ function drawGlow(x,y,size,color,alpha=.28){
   ctx.restore();
 }
 function drawCurrencySpark(x,y,size,color,phase){
+  let sprite=currencySparkCache.get(color);
+  if(!sprite){
+    sprite=createCanvasSurface(24,24);
+    const sparkCtx=sprite.getContext('2d');
+    if(!sparkCtx) return;
+    sparkCtx.fillStyle=color;
+    sparkCtx.strokeStyle='#fff4e8';
+    sparkCtx.lineWidth=.7;
+    sparkCtx.beginPath();sparkCtx.arc(12,12,4,0,TAU);sparkCtx.fill();
+    sparkCtx.globalAlpha=.5;
+    sparkCtx.beginPath();sparkCtx.arc(12,12,7,0,TAU);sparkCtx.stroke();
+    sparkCtx.globalAlpha=.75;
+    sparkCtx.fillStyle='#fff7df';
+    sparkCtx.beginPath();sparkCtx.arc(9,9,1.4,0,TAU);sparkCtx.fill();
+    currencySparkCache.set(color,sprite);
+    if(currencySparkCache.size>32) currencySparkCache.delete(currencySparkCache.keys().next().value);
+  }
   const pulse=.82+.18*Math.sin(clock*4+phase);
   ctx.save();
   ctx.globalAlpha=.82*pulse;
-  ctx.fillStyle=color;
-  ctx.strokeStyle='#fff4e8';
-  ctx.lineWidth=.7;
-  ctx.beginPath();
-  ctx.arc(x,y,Math.max(1.5,size*.22),0,TAU);
-  ctx.fill();
-  ctx.globalAlpha=.5*pulse;
-  ctx.beginPath();
-  ctx.arc(x,y,Math.max(2.5,size*.42),0,TAU);
-  ctx.stroke();
-  ctx.globalAlpha=.75*pulse;
-  ctx.fillStyle='#fff7df';
-  ctx.beginPath();
-  ctx.arc(x-size*.14,y-size*.14,Math.max(.7,size*.1),0,TAU);
-  ctx.fill();
+  const sparkSize=Math.max(8,size*1.8);
+  ctx.drawImage(sprite,Math.floor(x-sparkSize/2),Math.floor(y-sparkSize/2),sparkSize,sparkSize);
   ctx.restore();
+}
+function wormLabelSprite(text,compact,strokeColor,textColor,fillColor){
+  const key=[text,compact?1:0,strokeColor,textColor,fillColor].join('|');
+  if(labelSpriteCache.has(key)) return labelSpriteCache.get(key);
+  const font=compact?'700 13px system-ui':'700 14px system-ui';
+  ctx.font=font;
+  const textWidth=Math.ceil(ctx.measureText(text).width);
+  const paddingX=compact?8:11;
+  const widthPx=textWidth+paddingX*2;
+  const heightPx=compact?23:27;
+  const surface=createCanvasSurface(widthPx,heightPx);
+  const sprite=surface.getContext('2d');
+  if(!sprite) return null;
+  sprite.font=font;
+  sprite.fillStyle=fillColor;
+  sprite.strokeStyle=strokeColor;
+  sprite.lineWidth=1;
+  sprite.beginPath();
+  sprite.roundRect(.5,.5,widthPx-1,heightPx-1,compact?7:9);
+  sprite.fill();
+  sprite.stroke();
+  sprite.textAlign='center';
+  sprite.textBaseline='middle';
+  sprite.fillStyle=textColor;
+  sprite.fillText(text,widthPx/2,heightPx/2+.5);
+  labelSpriteCache.set(key,surface);
+  if(labelSpriteCache.size>256) labelSpriteCache.delete(labelSpriteCache.keys().next().value);
+  return surface;
 }
 function particleSprite(color){
   if(particleSpriteCache.has(color)) return particleSpriteCache.get(color);
@@ -2113,6 +2149,20 @@ function drawBackground(){
   }
   ctx.restore();
 
+  if(settings.videoStyle||customPattern){
+    ctx.save();
+    ctx.translate(-left,-top);
+    ctx.strokeStyle=arenaAccent;
+    ctx.globalAlpha=.22;
+    ctx.lineWidth=18;
+    ctx.strokeRect(0,0,WORLD.w,WORLD.h);
+    ctx.globalAlpha=1;
+    ctx.lineWidth=3;
+    ctx.strokeRect(8,8,WORLD.w-16,WORLD.h-16);
+    ctx.restore();
+    return;
+  }
+
   // Крупные атмосферные элементы делают биом визуально отличимым.
   const biome=settings.biome;
   ctx.save();
@@ -2417,20 +2467,11 @@ function drawSimpleWorm(w){
 
   if(!visible(headX,headY,125)) return;
   const text=scoreLabel(w.amount);
-  ctx.font='700 13px system-ui';
-  const tw=ctx.measureText(text).width;
   const y=headY-r-34;
-  ctx.fillStyle=settings.videoStyle?'#031b13ee':'#07111eee';
-  ctx.strokeStyle=settings.videoStyle?'#14ff4a':visual.active?visual.accent:visual.color;
-  ctx.lineWidth=1;
-  ctx.beginPath();
-  ctx.roundRect(headX-tw/2-8,y,tw+16,23,7);
-  ctx.fill();
-  ctx.stroke();
-  ctx.textAlign='center';
-  ctx.textBaseline='middle';
-  ctx.fillStyle=settings.videoStyle?'#20ff4d':visual.active?visual.accent:'#f4ffff';
-  ctx.fillText(text,headX,y+11.5);
+  const strokeColor=settings.videoStyle?'#14ff4a':visual.active?visual.accent:visual.color;
+  const textColor=settings.videoStyle?'#20ff4d':visual.active?visual.accent:'#f4ffff';
+  const label=wormLabelSprite(text,true,strokeColor,textColor,settings.videoStyle?'#031b13ee':'#07111eee');
+  if(label) ctx.drawImage(label,Math.floor(headX-label.width/2),Math.floor(y));
 }
 
 
@@ -2589,20 +2630,11 @@ function drawWorm(w){
 
   if(!visible(headX,headY,125)) return;
   const text=scoreLabel(w.amount);
-  ctx.font='700 14px system-ui';
-  const tw=ctx.measureText(text).width;
   const y=headY-r-39;
-  ctx.fillStyle=settings.videoStyle?'#031b13ee':'#07111eee';
-  ctx.strokeStyle=settings.videoStyle?'#14ff4a':visual.active?visual.accent:w.boosting?'#ffe078':visual.color;
-  ctx.lineWidth=1;
-  ctx.beginPath();
-  ctx.roundRect(headX-tw/2-11,y,tw+22,27,9);
-  ctx.fill();
-  ctx.stroke();
-  ctx.textAlign='center';
-  ctx.textBaseline='middle';
-  ctx.fillStyle=settings.videoStyle?'#20ff4d':visual.active?visual.accent:w.boosting?'#ffe078':'#f4ffff';
-  ctx.fillText(text,headX,y+13.5);
+  const strokeColor=settings.videoStyle?'#14ff4a':visual.active?visual.accent:w.boosting?'#ffe078':visual.color;
+  const textColor=settings.videoStyle?'#20ff4d':visual.active?visual.accent:w.boosting?'#ffe078':'#f4ffff';
+  const label=wormLabelSprite(text,false,strokeColor,textColor,settings.videoStyle?'#031b13ee':'#07111eee');
+  if(label) ctx.drawImage(label,Math.floor(headX-label.width/2),Math.floor(y));
 
   if(w.player){
     ctx.fillStyle=visual.active?visual.accent:w.boosting?'#ffe078':visual.color;

@@ -28,18 +28,18 @@ button:hover{border-color:#54ffe0}
   font-size:12px;line-height:1.8;pointer-events:none
 }
 #steampunkHud{
-  position:fixed;top:12px;left:50%;right:auto;width:min(780px,calc(100vw - 28px));height:48px;
+  position:fixed;top:8px;left:50%;right:auto;width:min(560px,calc(100vw - 30px));height:40px;
   transform:translateX(-50%);
-  display:none;align-items:center;gap:14px;padding:8px 16px;
+  display:none;align-items:center;gap:8px;padding:5px 10px;
   border:1px solid #1d7d6d;background:#031522ee;border-radius:24px;
   box-shadow:0 0 18px #00ff7038,inset 0 0 20px #001e2d;
   pointer-events:none;z-index:4
 }
 #steampunkHud.visible{display:flex}
-.hud-score,.hud-limit{font-weight:900;font-size:clamp(13px,2.4vw,22px);white-space:nowrap}
+.hud-score,.hud-limit{font-weight:900;font-size:clamp(11px,1.8vw,16px);white-space:nowrap}
 .hud-score{color:#26ff4d;text-shadow:0 0 10px #00ff4d}
 .hud-limit{margin-left:auto;color:#a7c9d2}
-.hud-progress{height:30px;flex:1;min-width:60px;border-radius:18px;background:#071629;border:1px solid #193a47;overflow:hidden}
+.hud-progress{height:22px;flex:1;min-width:45px;border-radius:18px;background:#071629;border:1px solid #193a47;overflow:hidden}
 .hud-progress-fill{height:100%;width:0;border-radius:inherit;background:#12f33b;box-shadow:0 0 16px #00ff48;transition:width .12s linear}
 #steampunkHud.over-limit .hud-progress-fill{background:#ffe51d;box-shadow:0 0 16px #ffe51d}
 #hint{
@@ -121,7 +121,7 @@ input[type=range]{accent-color:#54ffe0;cursor:pointer}
   #mobileControls{display:block;position:fixed;inset:0;z-index:3;pointer-events:none}
   #stats{top:calc(10px + env(safe-area-inset-top));left:10px;padding:8px 10px;font-size:11px}
   #gear{top:calc(10px + env(safe-area-inset-top));right:10px}
-  #steampunkHud{top:calc(8px + env(safe-area-inset-top));width:calc(100vw - 20px);height:44px;padding:5px 10px}
+  #steampunkHud{top:calc(6px + env(safe-area-inset-top));width:calc(100vw - 24px);height:38px;padding:4px 8px}
   #hint{display:none}
 }
 @media (pointer:coarse) and (max-width:430px){
@@ -357,6 +357,7 @@ const STEP=1/60;
 const TAU=Math.PI*2;
 // PERF: фиксированный размер ячейки для локальных запросов без Map-ключей.
 const GRID_CELL=128;
+const MAX_STEPS_PER_FRAME=3;
 const BOT_LIMIT=9;
 
 // Ускорение снимает 1 валюту за 3 секунды.
@@ -409,6 +410,7 @@ const SKIN_PRESETS={
 const BOT_SKIN_PRESETS=Object.values(SKIN_PRESETS);
 const BODY_SKIN_PRESETS=['neon','rainbow','striped','bordered'];
 const STRIPE_COLORS=['#24efff','#ffd92f','#ff3d67','#65ff9a'];
+const RAINBOW_COLORS=['#ff4d6d','#ff9f43','#ffe14a','#7cff5b','#35e0ff','#668cff','#bd6cff','#ff63c9'];
 
 const settings={
   startAmount:1000,
@@ -499,8 +501,8 @@ function botProfile(){
   return BOT_PROFILES[settings.botDifficulty]||BOT_PROFILES.medium;
 }
 const PERFORMANCE_PROFILES={
-  balanced:{dpr:1.5,maxBots:9,neonBots:10,neonMinBots:7,maxCoins:420,maxLootCoins:80,segmentStep:2,segmentCap:155,shadows:true,details:true,background:true,minimap:true},
-  highFps:{dpr:1.25,maxBots:8,neonBots:9,neonMinBots:6,maxCoins:300,maxLootCoins:55,segmentStep:3,segmentCap:130,shadows:false,details:true,background:true,minimap:true},
+  balanced:{dpr:1.25,maxBots:8,neonBots:9,neonMinBots:6,maxCoins:320,maxLootCoins:65,segmentStep:3,segmentCap:125,shadows:true,details:true,background:true,minimap:true},
+  highFps:{dpr:1,maxBots:7,neonBots:8,neonMinBots:5,maxCoins:240,maxLootCoins:45,segmentStep:4,segmentCap:105,shadows:false,details:true,background:true,minimap:false},
   maxSmooth:{dpr:1,maxBots:6,neonBots:7,neonMinBots:5,maxCoins:220,maxLootCoins:35,segmentStep:5,segmentCap:92,shadows:false,details:false,background:false,minimap:false},
   quality:{dpr:2,maxBots:9,neonBots:12,neonMinBots:8,maxCoins:520,maxLootCoins:100,segmentStep:1,segmentCap:155,shadows:true,details:true,background:true,minimap:true}
 };
@@ -631,8 +633,8 @@ function syncUI(){
   $('magnetStrengthValue').textContent=Math.round(settings.magnetStrength)+' ед./с';
   $('powerNote').textContent=`Усиление ${settings.powerEnabled?'включено':'выключено'}: ${digits(settings.powerThreshold)}. Пока суперформа активна, каждая подобранная монета приносит x2.`;
   $('performanceNote').textContent={
-    balanced:'Баланс: обычная графика, до 9 противников (в неон-арене — до 10).',
-    highFps:'Высокий FPS: снижены тени, разрешение Canvas и количество объектов; до 9 соперников в неон-арене.',
+    balanced:'Баланс: стабильная графика, до 8 противников (в неон-арене — до 9).',
+    highFps:'Высокий FPS: снижены тени, DPR и количество объектов; до 8 соперников в неон-арене.',
     maxSmooth:'Максимальная плавность: простые черви и фон, до 6 противников, без мини-карты и дорогих эффектов.',
     quality:'Качество: максимум детализации и до 12 соперников в неон-арене.'
   }[settings.performanceMode];
@@ -1078,7 +1080,8 @@ function makeWorm(x,y,isPlayer=false){
   return w;
 }
 function spawnBot(){
-  for(let attempt=0;attempt<240;attempt++){
+  const attempts=performanceProfile().segmentStep>=4?60:120;
+  for(let attempt=0;attempt<attempts;attempt++){
     const minDistance=settings.gameMode==='neonArena'?180:220;
     const maxDistance=settings.nearbySpawnRadius;
     const angle=rand(0,TAU);
@@ -1300,8 +1303,8 @@ function updateHud(){
   if(settings.hudEnabled) hud.classList.add('visible');
   else hud.classList.remove('visible');
   $('stats').style.display=settings.videoStyle?'none':'';
-  $('gear').style.top=settings.hudEnabled?'82px':'';
-  if(IS_COARSE_POINTER) $('gear').style.top=settings.hudEnabled?'66px':'';
+  $('gear').style.top=settings.hudEnabled?'58px':'';
+  if(IS_COARSE_POINTER) $('gear').style.top=settings.hudEnabled?'50px':'';
   if(!settings.hudEnabled) return;
   const score=Math.max(0,player.amount);
   const limit=Math.max(1,settings.hudLimit);
@@ -2409,9 +2412,8 @@ function bodySegmentVisual(w,index,visual){
   const style=w.bodySkin||'neon';
   const result=w.segmentVisual||(w.segmentVisual={color:visual.color,accent:visual.accent,border:false});
   if(style==='rainbow'){
-    const hue=(index/Math.max(1,w.segments.length-1)*320+clock*28)%360;
-    result.color=`hsl(${hue} 92% 60%)`;
-    result.accent=`hsl(${(hue+48)%360} 100% 82%)`;
+    result.color=RAINBOW_COLORS[index%RAINBOW_COLORS.length];
+    result.accent='#f4ffff';
     result.border=false;
     return result;
   }
@@ -2773,14 +2775,19 @@ function frame(now){
   last=now;
   if(!paused&&!ended&&!document.hidden){
     accumulator+=elapsed;
-    while(accumulator>=STEP){
+    let steps=0;
+    while(accumulator>=STEP&&steps<MAX_STEPS_PER_FRAME){
       update(STEP);
       accumulator-=STEP;
+      steps++;
       if(ended){
         accumulator=0;
         break;
       }
     }
+    // Не даём просевшему кадру запускать длинную очередь update() и создавать
+    // спираль микрофризов. Лишнее время мягко отбрасывается.
+    if(steps===MAX_STEPS_PER_FRAME&&accumulator>STEP) accumulator=STEP*.5;
   }else{
     accumulator=0;
   }

@@ -1,0 +1,84 @@
+{
+  "tests": [
+    {
+      "name": "Sanitize imports, numeric clamps, unsafe background, unknown properties",
+      "pass": true
+    },
+    {
+      "name": "All configurable defaults have schema or asset metadata",
+      "pass": true
+    },
+    {
+      "name": "Fixed movement and turn-rate bound",
+      "pass": true
+    },
+    {
+      "name": "Head history follows exact path with no stretching",
+      "pass": true
+    },
+    {
+      "name": "Collection grows score and body once only",
+      "pass": true
+    },
+    {
+      "name": "World update collects food by proximity",
+      "pass": true
+    },
+    {
+      "name": "Maximum length is respected",
+      "pass": true
+    },
+    {
+      "name": "Boost accelerates and spends score/length",
+      "pass": true
+    },
+    {
+      "name": "AI actively moves, seeks food, and consumes it",
+      "pass": true
+    },
+    {
+      "name": "AI disabled removes all opponents",
+      "pass": true
+    },
+    {
+      "name": "AI target min/max and respawn delay",
+      "pass": true
+    },
+    {
+      "name": "Death drops collectible gold and reports loss once",
+      "pass": true
+    },
+    {
+      "name": "Head-to-body collision kills and credits opponent",
+      "pass": true
+    },
+    {
+      "name": "Boundary death and safe mode",
+      "pass": true
+    },
+    {
+      "name": "Goal continues playing; boundary ends once and reset works",
+      "pass": true
+    },
+    {
+      "name": "Frame independence for 60 Hz fixed simulation",
+      "pass": true
+    },
+    {
+      "name": "Normal gameplay stability / 20 seconds / finite state",
+      "pass": true
+    },
+    {
+      "name": "AI never uses country flags at spawn, sync, reset or respawn",
+      "pass": true
+    },
+    {
+      "name": "Score animation is monotonic, retargetable, exact and frame-rate independent",
+      "pass": true
+    },
+    {
+      "name": "Opponent variants reuse native materials and contain no country motifs",
+      "pass": true
+    }
+  ]
+}

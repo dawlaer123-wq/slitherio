@@ -1,0 +1,64 @@
+'use strict';
+(function(S){
+ const $=id=>document.getElementById(id);
+ S.gameText={
+   ru:{play:'НАЧАТЬ ИГРУ ↗',settings:'Настроить арену ⚙',restart:'НОВЫЙ РАУНД',menu:'Главное меню',resume:'ПРОДОЛЖИТЬ',description:'Собирай золото. Расти. Обойди соперников.',tagline:'МИР, КОТОРЫЙ НИКОГДА НЕ СТОИТ НА МЕСТЕ',input:'МЫШЬ / WASD / ДЖОЙСТИК',virtualPoints:'ВИРТУАЛЬНЫЕ ОЧКИ',pause:'Пауза',takeTime:'НЕ ТОРОПИСЬ',boost:'УСКОРЕНИЕ',skin:'Изменить скин',joystick:'Виртуальный джойстик',arenaLabel:'Игровая арена. Управление мышью, WASD или джойстиком',startHint:'Следуй за золотом · SPACE или ↟ — ускорение'},
+   es:{play:'JUGAR ↗',settings:'Configurar arena ⚙',restart:'NUEVA RONDA',menu:'Menú principal',resume:'CONTINUAR',description:'Recoge oro. Crece. Supera a tus rivales.',tagline:'UN MUNDO QUE NUNCA SE DETIENE',input:'RATÓN / WASD / JOYSTICK',virtualPoints:'PUNTOS VIRTUALES',pause:'Pausa',takeTime:'TÓMATE TU TIEMPO',boost:'IMPULSO',skin:'Cambiar aspecto',joystick:'Joystick virtual',arenaLabel:'Arena de juego. Control con ratón, WASD o joystick',startHint:'Sigue el oro · ESPACIO o ↟ para acelerar'}
+ };
+ class App{
+   constructor(){this.cfg=S.storage.settings();this.renderer=new S.Renderer($('game'),this.cfg);this.world=new S.World(this.cfg);this.world.onEnd=win=>this.finish(win);this.world.onEat=f=>this.sound(f);this.paused=false;this.playing=false;this.keys=new Set();this.input={angle:undefined,boost:false};this.mouse=null;this.joy=null;this.boostPointers=new Set();this.accumulator=0;this.last=0;this.fps=60;this.lastHud=0;this.toastTimer=0;this.audio=null;
+     this.ready=S.storage.restoreBackground(this.cfg).then(()=>{if(this.cfg.background){this.changed();}}).catch(()=>{this.toast('Не удалось восстановить фон. Загрузите изображение ещё раз.');});
+     this.admin=new S.Admin(this);this.bind();this.changed();this.menuSkins();requestAnimationFrame(t=>this.frame(t));if(new URLSearchParams(location.search).get('admin')==='1')this.admin.open();
+   }
+   toast(text){this.lastGameHint=text===this.text('startHint');$('toast').textContent=text;$('toast').classList.add('visible');clearTimeout(this.toastTimer);this.toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),3500);}
+   changed(){this.dirty=true;if(this.applied&&(this.applied.foodCount!==this.cfg.foodCount||this.applied.density!==this.cfg.density)){if(this.applied.density!==this.cfg.density)this.world.food=[];this.world.food=this.world.food.slice(0,this.cfg.foodCount);this.world.populateFood(this.cfg.foodCount);}this.applied=S.clone(this.cfg);this.world.sync();this.renderer.resize();this.renderer.buildFloor();this.renderer.syncBackground();this.badge();this.menuSkins();document.body.dataset.uiposition=this.cfg.uiPosition;document.body.dataset.joystick=this.cfg.joystick;const hud=document.querySelector('.hud-score');hud.style.width=`min(${540*this.cfg.uiScale}px,calc(100% - 28px))`;hud.style.height=38*this.cfg.uiScale+'px';hud.style.fontSize=11*this.cfg.uiScale+'px';$('score').style.color=this.cfg.textColor;$('controls').style.setProperty('--control-scale',this.cfg.uiScale);$('joystick').style.transform=`scale(${this.cfg.uiScale})`;$('country').style.transform=`scale(${this.cfg.uiScale})`;$('boost').style.transform=`scale(${this.cfg.uiScale})`;this.localize();this.hud();}
+   text(key){return S.gameText[this.cfg.language||'ru'][key];}
+   localize(){
+     document.documentElement.lang=this.cfg.language||'ru';
+     for(const [id,key]of Object.entries({play:'play',menuSettings:'settings',restart:'restart',toMenu:'menu',resume:'resume'}))$(id).textContent=this.text(key);
+     document.querySelector('#menu .menu-card>p').textContent=this.text('description');
+     document.querySelector('#menu .eyebrow').textContent=this.text('tagline');
+     const foot=document.querySelectorAll('.menu-foot span');foot[0].textContent=this.text('input');foot[1].textContent=this.text('virtualPoints');
+     document.querySelector('#pause h2').textContent=this.text('pause');document.querySelector('#pause .eyebrow').textContent=this.text('takeTime');
+     document.querySelector('#boost small').textContent=this.text('boost');
+     for(const [id,key]of Object.entries({game:'arenaLabel',country:'skin',joystick:'joystick',boost:'boost',pauseBtn:'pause',adminBtn:'settings'}))$(id).setAttribute('aria-label',this.text(key));
+     $('country').title=this.text('skin');
+     if($('toast').classList.contains('visible')&&this.lastGameHint){$('toast').textContent=this.text('startHint');}
+   }
+   badge(){const cv=document.createElement('canvas');cv.width=112;cv.height=112;this.renderer.badge(cv.getContext('2d'),this.cfg.skin,56,56,55);$('country').replaceChildren(cv);}
+   menuSkins(){if(!this.renderer)return;$('menuSkins').replaceChildren();for(const skin of ['original','venezuela','argentina','custom']){const b=document.createElement('button');b.className=skin===this.cfg.skin?'active':'';b.title=skin.toUpperCase();b.setAttribute('aria-label',skin.toUpperCase());const c=document.createElement('canvas');c.width=92;c.height=80;this.renderer.badge(c.getContext('2d'),skin,46,40,28);b.append(c);b.onclick=()=>{this.admin.chooseSkin(skin);this.badge();};$('menuSkins').append(b);}}
+   start(){this.playing=true;this.paused=false;this.world.demo=false;this.world.reset();this.renderer.camera.x=this.world.player.x;this.renderer.camera.y=this.world.player.y;this.mouse=null;this.input.angle=-.65;this.input.boost=false;this.keys.clear();this.accumulator=0;for(const id of ['menu','result','pause'])$(id).classList.add('hidden');$('resultScore').textContent='';this.hud();this.soundInit();this.toast(this.text('startHint'));}
+   finish(win){this.playing=false;this.input.boost=false;const amount=S.formatScore(this.world.player.score),el=$('resultScore');el.textContent=amount;el.style.fontSize=`clamp(18px,${Math.min(12,112/amount.length)}vw,${Math.min(72,560/amount.length)}px)`;$('result').classList.remove('hidden');}
+
+   pause(){if(!this.playing||this.admin.visible)return;this.paused=!this.paused;$('pause').classList.toggle('hidden',!this.paused);this.input.boost=false;this.keys.clear();}
+   menu(){this.playing=false;this.paused=false;this.world.demo=true;this.world.reset();$('result').classList.add('hidden');$('pause').classList.add('hidden');$('menu').classList.remove('hidden');}
+   animateIndicators(dt){for(const s of this.world.snakes){s.displayScore=S.smoothNumber(s.displayScore,s.score,dt);s.displayRadius=S.smoothNumber(s.displayRadius,s.radius,dt);}}
+   hud(){const p=this.world.player,ratio=S.clamp((p.displayScore??p.score)/this.cfg.goal,0,1),score=this.cfg.numbers?S.formatScore(p.displayScore??p.score)+' '+this.cfg.currency:'SERPENT ARENA',target=this.cfg.numbers?S.formatScore(this.cfg.goal)+' '+this.cfg.currency:this.text('virtualPoints');if($('score').textContent!==score)$('score').textContent=score;if($('target').textContent!==target)$('target').textContent=target;$('progress').style.transform=`scaleX(${ratio})`;$('progress').style.background=ratio>=.85?'#ffe424':this.cfg.progressColor;$('progress').style.boxShadow=`0 0 12px ${ratio>=.85?'#ffe424':this.cfg.progressColor}`;$('boost').classList.toggle('active',!!p.boost&&this.cfg.boosting);$('boost').style.opacity=this.cfg.boosting?'1':'.25';}
+   clearInput(){this.keys.clear();this.joy=null;this.input.boost=false;this.boostPointers.clear();$('stick').style.transform='';}
+   bind(){
+     $('play').onclick=() =>this.start();$('restart').onclick=()=>this.start();$('toMenu').onclick=()=>this.menu();$('pauseBtn').onclick=()=>this.pause();$('resume').onclick=()=>this.pause();
+     window.addEventListener('resize',()=>this.renderer.resize());
+     window.addEventListener('keydown',e=>{if(this.admin.visible){if(e.key==='Escape')this.admin.close();return;}if(e.target.matches('input,select,textarea')&&e.key!=='Escape')return;if([' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();this.keys.add(e.code);if(e.repeat)return;if(e.code==='Escape'||e.code==='KeyP')this.pause();if(e.code==='Enter'&&!this.playing&&$('menu').classList.contains('hidden')===false)this.start();});
+     window.addEventListener('keyup',e=>this.keys.delete(e.code));
+     window.addEventListener('blur',()=>this.clearInput());document.addEventListener('visibilitychange',()=>{if(document.hidden){this.clearInput();if(this.playing&&!this.paused&&!this.admin.visible)this.pause();}this.last=0;});
+     const game=$('game');game.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'){this.mouse={x:e.clientX,y:e.clientY};}else if(game.hasPointerCapture(e.pointerId)){this.mouse={x:e.clientX,y:e.clientY};}});
+     game.addEventListener('pointerdown',e=>{game.setPointerCapture(e.pointerId);this.mouse={x:e.clientX,y:e.clientY};if(e.pointerType==='mouse')this.boostPointers.add(e.pointerId);this.soundInit();});
+     const release=e=>{this.boostPointers.delete(e.pointerId);};game.addEventListener('pointerup',release);game.addEventListener('pointercancel',release);game.addEventListener('lostpointercapture',release);game.oncontextmenu=e=>e.preventDefault();
+     const joystick=$('joystick');let joyId=null;const move=e=>{const r=joystick.getBoundingClientRect(),dx=e.clientX-r.left-r.width/2,dy=e.clientY-r.top-r.height/2,d=Math.hypot(dx,dy),radius=r.width*.3;this.joy=d>7?Math.atan2(dy,dx):null;$('stick').style.transform=`translate(${dx/Math.max(1,d/radius)/this.cfg.uiScale}px,${dy/Math.max(1,d/radius)/this.cfg.uiScale}px)`;};
+     joystick.addEventListener('pointerdown',e=>{if(joyId!==null)return;joyId=e.pointerId;joystick.setPointerCapture(e.pointerId);move(e);e.preventDefault();});joystick.addEventListener('pointermove',e=>{if(e.pointerId===joyId)move(e);});const endJoy=e=>{if(e.pointerId!==joyId)return;joyId=null;this.joy=null;this.mouse=null;$('stick').style.transform='';};joystick.addEventListener('pointerup',endJoy);joystick.addEventListener('pointercancel',endJoy);joystick.addEventListener('lostpointercapture',endJoy);
+     const boost=$('boost');boost.addEventListener('pointerdown',e=>{boost.setPointerCapture(e.pointerId);this.boostPointers.add(e.pointerId);e.preventDefault();});for(const name of ['pointerup','pointercancel','lostpointercapture'])boost.addEventListener(name,release);
+     // Keep keyboard focus within the settings dialog; Escape always returns to the arena.
+     $('admin').addEventListener('keydown',e=>{if(e.key!=='Tab')return;const all=[...$('admin').querySelectorAll('button,input,select')].filter(el=>el.offsetParent!==null),first=all[0],last=all[all.length-1];if(e.shiftKey&&document.activeElement===first){last.focus();e.preventDefault();}else if(!e.shiftKey&&document.activeElement===last){first.focus();e.preventDefault();}});
+   }
+   direction(){const k=this.keys,x=(k.has('KeyD')||k.has('ArrowRight')?1:0)-(k.has('KeyA')||k.has('ArrowLeft')?1:0),y=(k.has('KeyS')||k.has('ArrowDown')?1:0)-(k.has('KeyW')||k.has('ArrowUp')?1:0);if(x||y)this.input.angle=Math.atan2(y,x);else if(this.joy!==null)this.input.angle=this.joy;else if(this.mouse){const cam=this.renderer.camera,p=this.world.player,px=this.renderer.w/2+(p.x-cam.x)*cam.scale,py=this.renderer.h*.48+(p.y-cam.y)*cam.scale;const dx=this.mouse.x-px,dy=this.mouse.y-py;if(Math.hypot(dx,dy)>12)this.input.angle=Math.atan2(dy,dx);}
+     this.input.boost=this.cfg.boosting&&(k.has('Space')||k.has('ShiftLeft')||k.has('ShiftRight')||this.boostPointers.size>0);
+   }
+   frame(t){const dt=this.last?Math.min((t-this.last)/1000,.1):1/60;this.last=t;this.fps+=(1/dt-this.fps)*.03;
+     if(!this.paused){this.direction();this.accumulator+=dt;let steps=0;while(this.accumulator>=1/60&&steps++<6){this.world.update(1/60,this.input);this.accumulator-=1/60;}}else this.accumulator=0;
+     this.animateIndicators(dt);if(!this.paused||this.dirty){this.renderer.render(this.world,dt);this.dirty=false;}this.hud();if(this.admin.visible)this.renderer.preview($('preview'),t/1000);requestAnimationFrame(v=>this.frame(v));
+   }
+   soundInit(){if(!this.cfg.sound)return;try{if(!this.audio)this.audio=new(window.AudioContext||window.webkitAudioContext)();if(this.audio.state==='suspended')this.audio.resume();}catch{}}
+   sound(){if(!this.cfg.sound||!this.audio||this.audio.state!=='running')return;const now=this.audio.currentTime;if(now-(this.lastSound||0)<.055)return;this.lastSound=now;const o=this.audio.createOscillator(),g=this.audio.createGain();o.type='sine';o.frequency.setValueAtTime(600+this.world.player.collected%8*55,now);o.frequency.exponentialRampToValueAtTime(1000,now+.06);g.gain.setValueAtTime(.025,now);g.gain.exponentialRampToValueAtTime(.001,now+.1);o.connect(g);g.connect(this.audio.destination);o.start(now);o.stop(now+.11);}
+ }
+ S.app=new App();
+})(window.SA);

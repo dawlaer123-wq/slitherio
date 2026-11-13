@@ -13,3 +13,6 @@
 .result-number{min-height:1.05em;margin:0 0 18px;color:#ffe556;font:800 clamp(42px,12vw,88px)/1 Consolas,ui-monospace,monospace;letter-spacing:-.08em;text-shadow:0 0 30px #ffb90088}
 
 .hud-score b,.hud-score>span{font-variant-numeric:tabular-nums lining-nums}.hud-score{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr)}.result-number{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+
+#joystick.floating{position:fixed;right:auto;bottom:auto;z-index:25;pointer-events:none;}
+

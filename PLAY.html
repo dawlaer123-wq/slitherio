@@ -319,7 +319,7 @@ window.SA = window.SA || {};
      const selected=S.backgrounds?.find(b=>b.id===this.cfg.backgroundPreset);
      const src=selected?selected.src:this.cfg.backgroundPreset==='procedural'?'':this.cfg.background;
      if(this.backgroundSrc===src)return;
-     this.backgroundSrc=src;this.background=null;this.backgroundCache=null;this.backgroundPattern=null;this.backgroundCacheKey='';this.tilePatterns=new WeakMap();this.backgroundLevels=[];
+     this.repeatCache=null;this.backgroundSrc=src;this.background=null;this.backgroundCache=null;this.backgroundPattern=null;this.backgroundCacheKey='';this.tilePatterns=new WeakMap();this.backgroundLevels=[];
      if(!src)return;
      const img=new Image();
      img.onload=()=>{if(src!==this.backgroundSrc)return;this.background=img;this.backgroundLevels=[img];if(S.app)S.app.dirty=true;};
@@ -340,27 +340,66 @@ window.SA = window.SA || {};
      if(!entry||entry.key!==key){const tex=this.backgroundLevels[level],pattern=c.createPattern(tex,'repeat');pattern.setTransform(new DOMMatrix().scale(scale*img.width/tex.width,scale*img.height/tex.height));entry={key,pattern};this.tilePatterns.set(c,entry);}
      this.backgroundPattern=entry.pattern;return entry.pattern;
    }
-   drawBackground(c,left,top,width,height){
-     this.buildFloor();if(c===this.ctx)c.fillStyle=this.pattern;else c.fillStyle=c.createPattern(this.floor,'repeat');c.fillRect(left,top,width,height);this.syncBackground();
-     if(!this.background)return;
-     const img=this.background,fit=this.cfg.backgroundFit;c.save();c.globalAlpha=this.cfg.backgroundOpacity;c.imageSmoothingEnabled=true;
-     // Browser's fast bilinear sampling is sufficient at native resolution; expensive
-     // high-quality downsampling happens only when a cached tile level is built.
-     c.imageSmoothingQuality='low';
-     if(fit==='tile'){c.fillStyle=this.tilePattern(c);c.fillRect(left,top,width,height);}
-     else{
-       const size=this.worldSize||4800,scale=this.cfg.backgroundScale||1,key=fit+'|'+size+'|'+scale;
-       if(this.backgroundCacheKey!==key){
-         let w=size*scale,h=size*scale;
+   backgroundLayout(){
+     const img=this.background,fit=this.cfg.backgroundFit,scale=this.cfg.backgroundScale||1;
+     const preset=S.backgrounds?.some(b=>b.id===this.cfg.backgroundPreset);
+     // Reference textures describe a patch of floor, not a 4800px full-map image.
+     // Fit to a viewport-sized patch and repeat that patch over the world instead.
+     const vw=this.w/Math.max(.5,this.cfg.zoom),vh=this.h/Math.max(.5,this.cfg.zoom);
+     const size=this.worldSize||4800,key=[fit,size,scale,preset,vw,vh].join('|');
+     if(this.backgroundCacheKey!==key){
+       let w,h;
+       if(fit==='tile'){w=img.width*scale;h=img.height*scale;}
+       else if(preset){
+         const k=fit==='stretch'?1:(fit==='contain'?Math.min(vw/img.width,vh/img.height):Math.max(vw/img.width,vh/img.height));
+         w=(fit==='stretch'?vw:img.width*k)*scale;h=(fit==='stretch'?vh:img.height*k)*scale;
+       }else{
+         w=size*scale;h=size*scale;
          if(fit!=='stretch'){const k=(fit==='contain'?Math.min(size/img.width,size/img.height):Math.max(size/img.width,size/img.height))*scale;w=img.width*k;h=img.height*k;}
-         this.backgroundCache={x:(size-w)/2,y:(size-h)/2,w,h};this.backgroundCacheKey=key;
        }
-       const b=this.backgroundCache,x=Math.max(left,b.x),y=Math.max(top,b.y),right=Math.min(left+width,b.x+b.w),bottom=Math.min(top+height,b.y+b.h);
-       // Draw only the visible source rectangle, preserving source resolution and
-       // avoiding a map-sized intermediate canvas (up to hundreds of MB).
+       this.backgroundCache={x:preset||fit==='tile'?0:(size-w)/2,y:preset||fit==='tile'?0:(size-h)/2,w,h,repeat:preset||fit==='tile'};
+       this.backgroundCacheKey=key;
+     }
+     return this.backgroundCache;
+   }
+   drawRepeatedBackground(c,left,top,width,height,b){
+     const img=this.background,key=this.backgroundSrc+'|'+this.backgroundCacheKey;
+     const z=Math.max(.05,this.camera.scale||1),wanted=z*this.dpr;
+     let cache=this.repeatCache;
+     const contained=cache&&left>=cache.x&&top>=cache.y&&left+width<=cache.x+cache.w&&top+height<=cache.y+cache.h;
+     if(!cache||cache.key!==key||!contained||wanted>cache.resolution*1.3||wanted<cache.resolution*.55){
+       const margin=Math.max(96,Math.min(width,height)*.22),w=width+margin*2,h=height+margin*2;
+       // The cache is viewport-sized, never map-sized. Limit memory on high-DPI phones.
+       const resolution=Math.min(wanted,2048/w,2048/h),tex=canvas(Math.ceil(w*resolution),Math.ceil(h*resolution));
+       const cc=tex.getContext('2d',{alpha:false}),x=left-margin,y=top-margin;
+       cc.fillStyle='#0b1016';cc.fillRect(0,0,tex.width,tex.height);
+       cc.setTransform(resolution,0,0,resolution,-x*resolution,-y*resolution);
+       cc.imageSmoothingEnabled=true;cc.imageSmoothingQuality='high';
+       // No transformed CanvasPattern in the hot path: compose only on cache misses.
+       for(let yy=Math.floor(y/b.h)*b.h;yy<y+h;yy+=b.h){
+         for(let xx=Math.floor(x/b.w)*b.w;xx<x+w;xx+=b.w)cc.drawImage(img,xx,yy,b.w,b.h);
+       }
+       cache={key,x,y,w:tex.width/resolution,h:tex.height/resolution,resolution,texture:tex};this.repeatCache=cache;
+       this.backgroundCacheBuilds=(this.backgroundCacheBuilds||0)+1;
+     }
+     c.drawImage(cache.texture,(left-cache.x)*cache.resolution,(top-cache.y)*cache.resolution,width*cache.resolution,height*cache.resolution,left,top,width,height);
+   }
+   drawBackground(c,left,top,width,height){
+     this.syncBackground();const cfg=this.cfg,img=this.background;
+     const b=img?this.backgroundLayout():null;
+     // An opaque repeated image completely covers the floor. Do not draw an expensive,
+     // invisible procedural pattern underneath it (or even build its texture).
+     if(!img||cfg.backgroundOpacity<1||!b.repeat){
+       this.buildFloor();c.fillStyle=c===this.ctx?this.pattern:c.createPattern(this.floor,'repeat');c.fillRect(left,top,width,height);
+     }
+     if(!img||cfg.backgroundOpacity<=0)return;
+     c.save();c.globalAlpha=cfg.backgroundOpacity;c.imageSmoothingEnabled=true;c.imageSmoothingQuality='low';
+     if(b.repeat)this.drawRepeatedBackground(c,left,top,width,height,b);
+     else{
+       const x=Math.max(left,b.x),y=Math.max(top,b.y),right=Math.min(left+width,b.x+b.w),bottom=Math.min(top+height,b.y+b.h);
        if(right>x&&bottom>y)c.drawImage(img,(x-b.x)*img.width/b.w,(y-b.y)*img.height/b.h,(right-x)*img.width/b.w,(bottom-y)*img.height/b.h,x,y,right-x,bottom-y);
      }
-     c.restore();c.fillStyle='rgba(0,0,0,'+this.cfg.backgroundDarken+')';c.fillRect(left,top,width,height);
+     c.restore();if(cfg.backgroundDarken>0){c.fillStyle='rgba(0,0,0,'+cfg.backgroundDarken+')';c.fillRect(left,top,width,height);}
    }
    snake(c,s,time,preview=false){
      if(!s.alive)return;const cfg=this.cfg,pal=S.getPalette(s.skin,cfg),r=s.displayRadius??s.radius,all=s.points();if(all.length<2)return;
@@ -494,7 +533,7 @@ window.SA = window.SA || {};
      const gallery=element('div','background-gallery');
      for(const bg of S.backgrounds){const card=element('button','background-card');card.dataset.background=bg.id;card.classList.toggle('selected',this.cfg.backgroundPreset===bg.id);card.setAttribute('aria-pressed',String(this.cfg.backgroundPreset===bg.id));const image=element('img');image.src=bg.src;image.alt=bg.name;image.loading='lazy';card.append(image,element('strong',null,bg.name),element('small',null,'Выбрать фон'));card.onclick=()=>this.chooseBackground(bg.id);gallery.append(card);}
      panel.append(gallery);
-     panel.append(element('p','hint','PNG, JPG, JPEG или JFIF до 12 МБ. До 4096 px — без уменьшения и повторного сжатия; большие изображения оптимизируются до 4096 px. Фон хранится только на устройстве. Уменьшите масштаб изображения, если небольшой оригинал размывается при растяжении на всю карту. Режим «Повторять» использует кэш текстуры.'));const label=element('label','upload',this.cfg.backgroundName?'Фон: '+this.cfg.backgroundName:'Выбрать своё изображение арены');const file=element('input');file.type='file';file.accept='.png,.jpg,.jpeg,.jfif,image/png,image/jpeg';file.onchange=()=>this.upload(file.files[0]);label.append(file);panel.append(label);if(this.cfg.background){const remove=element('button',null,'Убрать свой фон');remove.onclick=()=>{this.cfg.backgroundPreset='custom';this.cfg.background='';this.cfg.backgroundName='';this.changed();this.showTab('background');};panel.append(remove);} }
+     panel.append(element('p','hint','PNG, JPG, JPEG или JFIF до 12 МБ. До 4096 px — без уменьшения и повторного сжатия; большие изображения оптимизируются до 4096 px. Фон хранится только на устройстве. Уменьшите масштаб изображения, если небольшой оригинал размывается при растяжении на всю карту. «Повторять» использует кэш видимой области. Встроенные фоны в режимах «Вписать» и «Заполнить» подгоняются под экран и продолжаются по карте без растяжения на весь мир.'));const label=element('label','upload',this.cfg.backgroundName?'Фон: '+this.cfg.backgroundName:'Выбрать своё изображение арены');const file=element('input');file.type='file';file.accept='.png,.jpg,.jpeg,.jfif,image/png,image/jpeg';file.onchange=()=>this.upload(file.files[0]);label.append(file);panel.append(label);if(this.cfg.background){const remove=element('button',null,'Убрать свой фон');remove.onclick=()=>{this.cfg.backgroundPreset='custom';this.cfg.background='';this.cfg.backgroundName='';this.changed();this.showTab('background');};panel.append(remove);} }
    async upload(file){if(!file)return;try{if(!/\.(png|jpe?g|jfif)$/i.test(file.name))throw Error('Выберите PNG, JPG, JPEG или JFIF');if(file.size>12*1024*1024)throw Error('Файл больше 12 МБ');const sig=new Uint8Array(await file.slice(0,12).arrayBuffer());const png=sig[0]===137&&sig[1]===80&&sig[2]===78&&sig[3]===71,jpg=sig[0]===255&&sig[1]===216&&sig[2]===255;if(!png&&!jpg)throw Error('Содержимое файла не является PNG/JPEG');
         const blob=new Blob([await file.arrayBuffer()],{type:png?'image/png':'image/jpeg'}),url=URL.createObjectURL(blob);let img;try{img=await new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(Error('Изображение повреждено'));i.src=url;});}finally{URL.revokeObjectURL(url);}if(img.width*img.height>80000000)throw Error('Слишком большое разрешение изображения');
         let data;

@@ -53,11 +53,13 @@
      const shade=c.createRadialGradient(n*.45,n*.45,80,n*.5,n*.5,n*.7);shade.addColorStop(0,'#00000000');shade.addColorStop(1,'#00000066');c.fillStyle=shade;c.fillRect(0,0,n,n);this.floor=tex;this.pattern=this.ctx.createPattern(tex,'repeat');
    }
    syncBackground(){
-     if(this.backgroundSrc===this.cfg.background)return;
-     this.backgroundSrc=this.cfg.background;this.background=null;this.backgroundCache=null;this.backgroundPattern=null;this.backgroundCacheKey='';this.tilePatterns=new WeakMap();this.backgroundLevels=[];
-     if(!this.cfg.background)return;
-     const src=this.cfg.background,img=new Image();
-     img.onload=()=>{if(src!==this.cfg.background)return;this.background=img;this.backgroundLevels=[img];if(S.app)S.app.dirty=true;};
+     const selected=S.backgrounds?.find(b=>b.id===this.cfg.backgroundPreset);
+     const src=selected?selected.src:this.cfg.backgroundPreset==='procedural'?'':this.cfg.background;
+     if(this.backgroundSrc===src)return;
+     this.backgroundSrc=src;this.background=null;this.backgroundCache=null;this.backgroundPattern=null;this.backgroundCacheKey='';this.tilePatterns=new WeakMap();this.backgroundLevels=[];
+     if(!src)return;
+     const img=new Image();
+     img.onload=()=>{if(src!==this.backgroundSrc)return;this.background=img;this.backgroundLevels=[img];if(S.app)S.app.dirty=true;};
      img.src=src;
    }
    tilePattern(c){

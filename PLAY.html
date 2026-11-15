@@ -46,7 +46,7 @@ window.SA = window.SA || {};
     ['skin','Скин','select',['original','venezuela','argentina','custom','brazil','leopard','jade','ruby']],
     ['primary','Основной цвет','color'],['secondary','Вторичный цвет','color'],['tertiary','Дополнительный цвет','color'],['head','Цвет головы','color'],['eyes','Цвет глаз','color'],['highlight','Цвет бликов','color'],['decor','Цвет декора','color'],
     ['pattern','Форма узора','select',['spots','sun','stars','scales','diamonds','none']],['patternSize','Размер узоров','range',.4,2.5,.1],['patternGap','Расстояние узоров','range',20,140,1],['skinGlow','Свечение материала','range',0,1,.05],['material','Яркость материала','range',.5,1.6,.05],
-    ['arena','Арена','select',['stone','mechanical','nature']],['floor','Текстура пола','select',['brick','slate','noise']],['environment','Цвет окружения','color'],['decorations','Плотность декора','range',0,2,.1],['particles','Красные частицы','range',0,700,10],['lighting','Освещение','range',.35,1.5,.05],['glow','Свечение золота','range',0,2,.1],['shadows','Глубина теней','range',0,1,.05],['absorption','Эффект поглощения','check'],['collisionEffects','Эффект столкновений','check'],['quality','Качество графики','select',['high','medium','low']],['zoom','Масштаб камеры','range',.5,1.8,.05],['density','Плотность золотых дорожек','range',.3,2,.1],
+    ['arena','Арена','select',['stone','mechanical','nature','cavern','moss','volcanic','crystal','abyss','desert']],['floor','Текстура пола','select',['brick','slate','noise']],['environment','Цвет окружения','color'],['decorations','Плотность декора','range',0,2,.1],['particles','Красные частицы','range',0,700,10],['lighting','Освещение','range',.35,1.5,.05],['glow','Свечение золота','range',0,2,.1],['shadows','Глубина теней','range',0,1,.05],['absorption','Эффект поглощения','check'],['collisionEffects','Эффект столкновений','check'],['quality','Качество графики','select',['high','medium','low']],['zoom','Масштаб камеры','range',.5,1.8,.05],['density','Плотность золотых дорожек','range',.3,2,.1],
     ['backgroundPreset','Коллекция фонов из видео','select',['custom','procedural','video1','video2','video3','video4','video5','video6']],
     ['backgroundFit','Отображение фона','select',['cover','contain','stretch','tile']],['backgroundScale','Масштаб изображения (меньше — чётче)','range',.25,2,.05],['backgroundOpacity','Непрозрачность фона','range',0,1,.05],['backgroundDarken','Затемнение фона','range',0,.9,.05],
     ['initialLength','Начальная длина (новый раунд)','range',180,1800,10],['initialScore','Начальные очки (новый раунд)','range',0,30000,500],['speed','Скорость','range',60,260,5],['maxSpeed','Максимальная скорость','range',100,480,5],['turnRate','Скорость поворота (рад/с)','range',1,7,.1],['acceleration','Ускорение','range',50,900,25],['growth','Рост за объект','range',.5,18,.5],['foodCount','Количество еды','range',200,5000,100],['foodSize','Размер еды','range',3,13,.5],['goal','Цель раунда','range',10000,500000,5000],['mapSize','Размер мира (новый раунд)','range',2400,9000,100],['foodRate','Появление еды (объектов/с)','range',0,80,1],['foodValue','Очки за золотой объект','range',50,1500,10],['collision','Правила столкновений','select',['classic','body-only','safe']],['boosting','Разрешить ускорение','check'],['maxLength','Максимальная длина','range',1000,8000,100],
@@ -293,7 +293,8 @@ window.SA = window.SA || {};
    buildFloor(){
      const cfg=this.cfg,key=[cfg.arena,cfg.floor,cfg.environment,cfg.decorations].join('|');if(key===this.floorKey)return;this.floorKey=key;
      const n=960,tex=canvas(n,n),c=tex.getContext('2d'),rng=new S.RNG(11112),r=(a,b)=>rng.range(a,b);
-     c.fillStyle=cfg.arena==='nature'?'#041618':cfg.arena==='mechanical'?'#151d22':'#1a2029';c.fillRect(0,0,n,n);
+     const baseFill={nature:'#041618',mechanical:'#151d22',cavern:'#17100e',moss:'#061915',volcanic:'#17090b',crystal:'#071522',abyss:'#050814',desert:'#21170d'}[cfg.arena]||'#1a2029';
+     c.fillStyle=baseFill;c.fillRect(0,0,n,n);
      const base=rgb(cfg.environment);
      if(cfg.floor==='brick'){
        for(let row=0;row<30;row++)for(let col=-1;col<11;col++){const x=col*96+(row%2)*48,y=row*32,shade=r(.45,.85);c.fillStyle=`rgb(${base.map(v=>Math.floor(v*shade)).join(',')})`;c.fillRect(x+2,y+2,92,28);c.strokeStyle='#ffffff06';c.beginPath();c.moveTo(x+3,y+28);c.lineTo(x+92,y+28);c.stroke();c.fillStyle='#00000033';c.fillRect(x+3,y+3,90,2);for(let j=0;j<4;j++){c.fillStyle=r(0,1)>.5?'#ffffff05':'#00000014';c.fillRect(x+r(3,86),y+r(4,27),r(3,34),1);}}
@@ -308,6 +309,36 @@ window.SA = window.SA || {};
        for(let i=0;i<Math.round(8*cfg.decorations);i++){const x=[290,740,180,640,470,880,70,470][i%8],y=[290,760,780,120,540,380,410,900][i%8],rr=i<2?210:r(40,90);c.globalAlpha=.62;gear(c,x,y,rr,Math.floor(rr/7),r(0,TAU));c.globalAlpha=1;}
      }else if(cfg.arena==='stone'){
        for(let i=0;i<Math.round(1.5*cfg.decorations);i++){const x=r(100,860),y=r(100,860),rr=r(110,220);c.save();c.translate(x,y);c.globalAlpha=.32;c.strokeStyle='#635f4d';c.lineWidth=20;c.beginPath();c.arc(0,0,rr,0,TAU);c.stroke();c.strokeStyle='#a28c56';c.lineWidth=1;for(let a=0;a<TAU;a+=.07){c.beginPath();c.moveTo(Math.cos(a)*(rr-11),Math.sin(a)*(rr-11));c.lineTo(Math.cos(a)*(rr+11),Math.sin(a)*(rr+11));c.stroke();}c.strokeStyle='#76623c';c.lineWidth=4;c.beginPath();c.arc(0,0,rr*.78,0,TAU);c.stroke();for(let a=0;a<TAU;a+=Math.PI/12){c.beginPath();c.moveTo(Math.cos(a)*rr*.2,Math.sin(a)*rr*.2);c.lineTo(Math.cos(a+.1)*rr*.65,Math.sin(a+.1)*rr*.65);c.stroke();}c.save();c.scale(1,1.2);sun(c,rr*.3,'#7c6f4e');c.restore();c.strokeStyle='#333933';c.lineWidth=3;c.beginPath();c.arc(-rr*.06,-rr*.03,rr*.035,Math.PI,TAU);c.stroke();c.beginPath();c.arc(rr*.06,-rr*.03,rr*.035,Math.PI,TAU);c.stroke();c.restore();}
+     }else if(cfg.arena==='cavern'||cfg.arena==='volcanic'||cfg.arena==='desert'){
+       const palettes={
+         cavern:['#4f2816','#a5682d','#1c0d0b'],
+         volcanic:['#6d1512','#e05d22','#22070a'],
+         desert:['#7d5524','#d29a42','#25160b']
+       }[cfg.arena];
+       for(let i=0;i<75;i++){
+         const x=r(-40,n+40),y=r(-40,n+40),rx=r(28,110),ry=r(18,72);
+         c.save();c.translate(x,y);c.rotate(r(-.4,.4));
+         const gr=c.createRadialGradient(-rx*.3,-ry*.35,2,0,0,Math.max(rx,ry));
+         gr.addColorStop(0,palettes[1]+'bb');gr.addColorStop(.55,palettes[0]+'cc');gr.addColorStop(1,palettes[2]+'00');
+         c.fillStyle=gr;c.beginPath();c.ellipse(0,0,rx,ry,0,0,TAU);c.fill();
+         c.strokeStyle=palettes[1]+'44';c.lineWidth=1.5;c.stroke();c.restore();
+       }
+       for(let i=0;i<Math.round(35*cfg.decorations);i++){const x=r(0,n),y=r(0,n);c.fillStyle=palettes[1]+'55';c.beginPath();c.arc(x,y,r(2,7),0,TAU);c.fill();}
+       if(cfg.arena==='volcanic'){for(let i=0;i<18;i++){c.strokeStyle='#ff8b2d55';c.lineWidth=r(1,3);c.beginPath();const x=r(0,n),y=r(0,n);c.moveTo(x,y);c.lineTo(x+r(-35,35),y+r(20,55));c.stroke();}}
+     }else if(cfg.arena==='moss'||cfg.arena==='crystal'||cfg.arena==='abyss'){
+       const palettes={
+         moss:['#123d2c','#37a875','#071511'],
+         crystal:['#153f62','#63d9ea','#071322'],
+         abyss:['#17214d','#6a59d7','#050611']
+       }[cfg.arena];
+       for(let i=0;i<90;i++){
+         const x=r(0,n),y=r(0,n),rr=r(12,100);
+         const gr=c.createRadialGradient(x-rr*.3,y-rr*.35,2,x,y,rr);
+         gr.addColorStop(0,palettes[1]+'99');gr.addColorStop(.45,palettes[0]+'cc');gr.addColorStop(1,palettes[2]+'00');
+         c.fillStyle=gr;c.beginPath();c.arc(x,y,rr,0,TAU);c.fill();
+         if(i<35){c.strokeStyle=palettes[1]+'55';c.lineWidth=r(1,2);c.beginPath();c.moveTo(x-rr,y+rr*.2);c.lineTo(x+rr*.7,y-rr*.5);c.stroke();}
+       }
+       for(let i=0;i<Math.round(28*cfg.decorations);i++){const x=r(0,n),y=r(0,n),rr=r(12,38);c.fillStyle=palettes[1]+'55';c.beginPath();c.moveTo(x,y-rr);c.lineTo(x+rr*.45,y);c.lineTo(x,y+rr);c.lineTo(x-rr*.45,y);c.closePath();c.fill();}
      }else{
        c.fillStyle=tint(cfg.environment,.24);c.fillRect(0,0,n,n);
        for(let i=0;i<Math.round(55*cfg.decorations);i++){const x=r(0,n),y=r(0,n),rr=r(12,90);c.save();c.translate(x,y);c.rotate(r(0,TAU));const gr=c.createRadialGradient(-rr*.4,-rr*.3,0,0,0,rr);gr.addColorStop(0,'#31483b');gr.addColorStop(.5,'#122a24');gr.addColorStop(1,'#031312');c.fillStyle=gr;c.beginPath();for(let j=0;j<9;j++){const a=j*TAU/9,rad=rr*r(.65,1);c.lineTo(Math.cos(a)*rad,Math.sin(a)*rad*.55);}c.closePath();c.fill();c.strokeStyle='#5980631f';c.stroke();c.restore();}
@@ -487,7 +518,7 @@ window.SA = window.SA || {};
    ai:{name:'AI SETTINGS',ru:'Участники арены',keys:['aiEnabled','aiCount','aiMin','aiMax','aiSpeed','difficulty','aggression','appetite','turnFrequency','aiSize','respawn','variety']},
    ui:{name:'UI SETTINGS',ru:'Интерфейс и управление',keys:['numbers','uiPosition','uiScale','textColor','progressColor','joystick','labels','currency','language','sound']}
  };
- const words={procedural:'Процедурная арена',video1:'01 · Тропический орнамент',video2:'02 · Ночные джунгли',video3:'03 · Потёртый триколор',video4:'04 · Чёрный мрамор',video5:'05 · Скалы и бронзовое солнце',video6:'06 · Солнечная мозаика',ru:'Русский',es:'Español',original:'ORIGINAL',venezuela:'VENEZUELA',argentina:'ARGENTINA',custom:'CUSTOM',brazil:'BRAZIL',leopard:'LEOPARD',jade:'JADE',ruby:'RUBY',stone:'Каменная',mechanical:'Механическая',nature:'Тёмная природная',brick:'Кирпич',slate:'Плиты',noise:'Шероховатая',spots:'Пятна',sun:'Солнце с лицом',stars:'Звёзды',scales:'Чешуя',diamonds:'Ромбы',none:'Нет узора',cover:'Заполнить (cover)',contain:'Вписать (contain)',stretch:'Растянуть',tile:'Повторять',classic:'Голова → чужое тело / граница', 'body-only':'Только чужое тело / граница',safe:'Безопасный режим',high:'Высокое',medium:'Среднее',low:'Низкое',top:'Сверху',bottom:'Снизу',glass:'Стеклянный',solid:'Сплошной',minimal:'Минимальный'};
+ const words={procedural:'Процедурная арена',video1:'01 · Тропический орнамент',video2:'02 · Ночные джунгли',video3:'03 · Потёртый триколор',video4:'04 · Чёрный мрамор',video5:'05 · Скалы и бронзовое солнце',video6:'06 · Солнечная мозаика',ru:'Русский',es:'Español',original:'ORIGINAL',venezuela:'VENEZUELA',argentina:'ARGENTINA',custom:'CUSTOM',brazil:'BRAZIL',leopard:'LEOPARD',jade:'JADE',ruby:'RUBY',stone:'Каменная',mechanical:'Механическая',nature:'Тёмная природная',cavern:'Янтарные пещеры',moss:'Неоновый мох',volcanic:'Вулканический базальт',crystal:'Кристальная глубина',abyss:'Бездна',desert:'Песчаный храм',brick:'Кирпич',slate:'Плиты',noise:'Шероховатая',spots:'Пятна',sun:'Солнце с лицом',stars:'Звёзды',scales:'Чешуя',diamonds:'Ромбы',none:'Нет узора',cover:'Заполнить (cover)',contain:'Вписать (contain)',stretch:'Растянуть',tile:'Повторять',classic:'Голова → чужое тело / граница', 'body-only':'Только чужое тело / граница',safe:'Безопасный режим',high:'Высокое',medium:'Среднее',low:'Низкое',top:'Сверху',bottom:'Снизу',glass:'Стеклянный',solid:'Сплошной',minimal:'Минимальный'};
  function element(tag,className,text){const e=document.createElement(tag);if(className)e.className=className;if(text!==undefined)e.textContent=text;return e;}
  class Admin{
    constructor(app){this.app=app;this.cfg=app.cfg;this.tab='skin';this.timer=null;this.customs=S.storage.get('skins',[]);if(!Array.isArray(this.customs))this.customs=[];this.customs=this.customs.slice(0,30).filter(v=>v&&typeof v.name==='string').map(v=>({name:v.name.slice(0,40),settings:S.sanitize(v.settings)}));
@@ -506,7 +537,7 @@ window.SA = window.SA || {};
      if(id==='background')this.backgroundPanel(panel);
      if(id==='gameplay')panel.append(element('p','hint','Все значения — виртуальные игровые очки. Начальная длина, очки и размер мира меняются со следующего раунда. Прочие параметры действуют сразу. Ускорение расходует очки и длину.'));
      if(id==='ai')panel.append(element('p','hint','Численность поддерживается между минимумом и максимумом. Новые участники появляются с заданной задержкой. После появления действует защита 4 секунды.'));
-     if(id==='visual')panel.append(element('p','hint','Три процедурных мира по референсам. Изменения освещения, материала, текстур и масштаба видны без перезапуска.'));
+     if(id==='visual')panel.append(element('p','hint','Процедурные арены создаются из кэшируемых текстур Canvas — без фотографий, мыла и лишней нагрузки. Изменения видны без перезапуска.'));
      const grid=element('div','grid');for(const key of g.keys)grid.append(this.field(key));panel.append(grid);
      if(id==='skin'){panel.append(element('p','hint','Цвета и форма узоров редактируют CUSTOM. Блики, яркость и свечение действуют на все материалы. При изменении цвета автоматически выбирается CUSTOM.'));const row=element('div','custom-row');const input=element('input');input.type='text';input.placeholder='Название собственного скина';input.maxLength=40;input.setAttribute('aria-label','Название собственного скина');const save=element('button',null,'Сохранить скин');save.onclick=()=>{const name=input.value.trim()||'Мой скин '+(this.customs.length+1);if(this.customs.length>=30){this.app.toast('Максимум 30 скинов. Экспортируйте коллекцию.');return;}const settings=S.clone(this.cfg);if(this.cfg.skin!=='custom'){const p=S.getPalette(this.cfg.skin,this.cfg);Object.assign(settings,{primary:p.colors[0],secondary:p.colors[1],tertiary:p.colors[2],decor:p.decor,pattern:p.pattern,eyes:p.eye,head:p.colors[1]});}settings.skin='custom';settings.background='';settings.backgroundName='';this.customs.push({name,settings});this.save(true);this.showTab('skin');};row.append(input,save);panel.append(row);this.savedSkins(panel);}
    }

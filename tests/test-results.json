@@ -1,6 +1,14 @@
 {
   "tests": [
     {
+      "name": "Grid reuses buckets, clears stale members and supports negative coordinates",
+      "pass": true
+    },
+    {
+      "name": "Body collision sample pool and snake point buffers reuse storage safely",
+      "pass": true
+    },
+    {
       "name": "Sanitize imports, numeric clamps, unsafe background, unknown properties",
       "pass": true
     },

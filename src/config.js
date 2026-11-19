@@ -4,7 +4,7 @@ window.SA = window.SA || {};
   S.version = 1;
   S.defaults = {
     skin:'original', primary:'#88c8ed', secondary:'#fff6dd', tertiary:'#83c4e8', head:'#91cce9', eyes:'#ffffff', highlight:'#ffffff', decor:'#e6a028', pattern:'spots', patternSize:1, patternGap:56, skinGlow:.2, material:1,
-    arena:'stone', floor:'brick', environment:'#24313a', decorations:1, particles:220, lighting:1, glow:1, shadows:.7, absorption:true, collisionEffects:true, quality:'high', zoom:1, density:1,
+    arena:'stone', floor:'brick', environment:'#24313a', decorations:1, particles:220, lighting:1, glow:1, shadows:.7, absorption:true, collisionEffects:true, quality:'high', adaptiveQuality:true, zoom:1, density:1,
     background:'', backgroundName:'', backgroundPreset:'custom', backgroundFit:'cover', backgroundScale:1, backgroundOpacity:1, backgroundDarken:.3,
     initialLength:700, initialScore:3000, speed:145, maxSpeed:265, turnRate:3.4, acceleration:350, growth:4, foodCount:1700, foodSize:7, goal:150000, mapSize:4800, foodRate:18, foodValue:240, collision:'classic', boosting:true, maxLength:4200,
     aiEnabled:true, aiCount:14, aiMin:8, aiMax:24, aiSpeed:125, difficulty:.8, aggression:.25, appetite:1, turnFrequency:.8, aiSize:1, respawn:5, variety:true,
@@ -15,7 +15,7 @@ window.SA = window.SA || {};
     ['skin','Скин','select',['original','venezuela','argentina','custom','brazil','leopard','jade','ruby']],
     ['primary','Основной цвет','color'],['secondary','Вторичный цвет','color'],['tertiary','Дополнительный цвет','color'],['head','Цвет головы','color'],['eyes','Цвет глаз','color'],['highlight','Цвет бликов','color'],['decor','Цвет декора','color'],
     ['pattern','Форма узора','select',['spots','sun','stars','scales','diamonds','none']],['patternSize','Размер узоров','range',.4,2.5,.1],['patternGap','Расстояние узоров','range',20,140,1],['skinGlow','Свечение материала','range',0,1,.05],['material','Яркость материала','range',.5,1.6,.05],
-    ['arena','Арена','select',['stone','mechanical','nature','cavern','moss','volcanic','crystal','abyss','desert']],['floor','Текстура пола','select',['brick','slate','noise']],['environment','Цвет окружения','color'],['decorations','Плотность декора','range',0,2,.1],['particles','Красные частицы','range',0,700,10],['lighting','Освещение','range',.35,1.5,.05],['glow','Свечение золота','range',0,2,.1],['shadows','Глубина теней','range',0,1,.05],['absorption','Эффект поглощения','check'],['collisionEffects','Эффект столкновений','check'],['quality','Качество графики','select',['high','medium','low']],['zoom','Масштаб камеры','range',.5,1.8,.05],['density','Плотность золотых дорожек','range',.3,2,.1],
+    ['arena','Арена','select',['stone','mechanical','nature','cavern','moss','volcanic','crystal','abyss','desert']],['floor','Текстура пола','select',['brick','slate','noise']],['environment','Цвет окружения','color'],['decorations','Плотность декора','range',0,2,.1],['particles','Красные частицы','range',0,700,10],['lighting','Освещение','range',.35,1.5,.05],['glow','Свечение золота','range',0,2,.1],['shadows','Глубина теней','range',0,1,.05],['absorption','Эффект поглощения','check'],['collisionEffects','Эффект столкновений','check'],['quality','Качество графики','select',['high','medium','low']],['adaptiveQuality','Автооптимизация при просадках FPS','check'],['zoom','Масштаб камеры','range',.5,1.8,.05],['density','Плотность золотых дорожек','range',.3,2,.1],
     ['backgroundPreset','Коллекция фонов из видео','select',['custom','procedural','video1','video2','video3','video4','video5','video6']],
     ['backgroundFit','Отображение фона','select',['cover','contain','stretch','tile']],['backgroundScale','Масштаб изображения (меньше — чётче)','range',.25,2,.05],['backgroundOpacity','Непрозрачность фона','range',0,1,.05],['backgroundDarken','Затемнение фона','range',0,.9,.05],
     ['initialLength','Начальная длина (новый раунд)','range',180,1800,10],['initialScore','Начальные очки (новый раунд)','range',0,30000,500],['speed','Скорость','range',60,260,5],['maxSpeed','Максимальная скорость','range',100,480,5],['turnRate','Скорость поворота (рад/с)','range',1,7,.1],['acceleration','Ускорение','range',50,900,25],['growth','Рост за объект','range',.5,18,.5],['foodCount','Количество еды','range',200,5000,100],['foodSize','Размер еды','range',3,13,.5],['goal','Цель раунда','range',10000,500000,5000],['mapSize','Размер мира (новый раунд)','range',2400,9000,100],['foodRate','Появление еды (объектов/с)','range',0,80,1],['foodValue','Очки за золотой объект','range',50,1500,10],['collision','Правила столкновений','select',['classic','body-only','safe']],['boosting','Разрешить ускорение','check'],['maxLength','Максимальная длина','range',1000,8000,100],
@@ -80,7 +80,7 @@ window.SA = window.SA || {};
   S.storage.saveSettings=function(cfg){
     const snapshot={...cfg};
     saveQueue=saveQueue.catch(()=>{}).then(async()=>{
-      if(snapshot.background.length>1400000){
+      if(snapshot.background.length>64000){
         if(storedBackground!==snapshot.background){
           const db=await database();
           await new Promise((resolve,reject)=>{const tx=db.transaction('images','readwrite');tx.objectStore('images').put(snapshot.background,'arena');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});

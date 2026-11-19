@@ -84,6 +84,50 @@
    for(const fit of ['cover','contain','stretch']){app.cfg.backgroundFit=fit;r.drawBackground(c,100,100,600,400);const b=r.backgroundCache;r.drawBackground(c,100,100,600,400);assert(b===r.backgroundCache,'Background layout not cached');assert(!b.getContext,'Map-sized background canvas allocated');}
    app.cfg.backgroundScale=.5;r.drawBackground(c,100,100,600,400);assert(r.backgroundCache.w>0,'Scale ignored in stretch mode');r.resize();
  });
+ await test('Custom tile cache survives capped high-DPI viewport without reload',()=>{
+   const r=app.renderer,c=r.ctx,old=S.clone(app.cfg),dpr=r.dpr,scale=r.camera.scale;
+   app.cfg.backgroundFit='tile';app.cfg.backgroundScale=1;app.cfg.backgroundPreset='custom';
+   r.camera.scale=1;r.dpr=2;r.repeatCache=null;
+   r.drawBackground(c,0,0,3200,1800);const tex=r.repeatCache.texture,builds=r.backgroundCacheBuilds;
+   assert(tex.width<=4096&&tex.height<=4096,'Unbounded cache allocation');
+   for(let i=0;i<90;i++)r.drawBackground(c,i*2,i,3200,1800);
+   assert(r.repeatCache.texture===tex&&r.backgroundCacheBuilds===builds,'Capped cache rebuilt every frame');
+   r.preview(w.document.getElementById('preview'),0);const preview=r.previewBackgroundCache?.texture;
+   r.preview(w.document.getElementById('preview'),1);assert(preview&&r.previewBackgroundCache.texture===preview,'Preview tile redrawn every frame');
+   app.cfg.backgroundFit='cover';r.drawBackground(c,0,0,600,400);app.cfg.backgroundFit='tile';r.drawBackground(c,0,0,600,400);
+   assert(r.repeatCache.image===r.background,'Switch needs reload');
+   Object.assign(app.cfg,old);r.dpr=dpr;r.camera.scale=scale;
+ });
+ await test('Repeated texture follows moving camera without raster rebuild or quality loss',()=>{
+   const r=app.renderer,c=r.ctx,old=S.clone(app.cfg),scale=r.camera.scale,dpr=r.dpr;
+   Object.assign(app.cfg,{backgroundPreset:'custom',backgroundFit:'tile',backgroundScale:1});r.camera.scale=1;r.dpr=2;r.repeatCache=null;
+   r.drawBackground(c,0,0,1280,720);const texture=r.repeatCache.texture,builds=r.backgroundCacheBuilds;
+   assert(texture===r.background,'Native source resolution was reduced at 1:1 scale');
+   for(let i=0;i<120;i++)r.drawBackground(c,i*70-3000,i*31-1000,1280,720);
+   assert(r.repeatCache.texture===texture&&r.backgroundCacheBuilds===builds,'Moving camera re-rasterized background');
+   Object.assign(app.cfg,old);r.camera.scale=scale;r.dpr=dpr;
+ });
+ await test('Micro-tile upload is batched; changing source/zoom remains valid',()=>{
+   const r=app.renderer,old=r.background,levels=r.backgroundLevels,fit=app.cfg.backgroundFit;
+   const tex=w.document.createElement('canvas');tex.width=tex.height=1;tex.getContext('2d').fillRect(0,0,1,1);
+   r.background=tex;r.backgroundLevels=[tex];r.repeatCache=null;r.backgroundCacheKey='';app.cfg.backgroundFit='tile';r.backgroundLayout();
+   r.drawRepeatedBackground(r.ctx,0,0,1280,720,r.backgroundLayout());assert(r.repeatCache.tw>=128&&r.repeatCache.th>=128,'1px source not batched');
+   assert(r.repeatCache.texture.width<=4096,'Tile allocation unbounded');r.background=old;r.backgroundLevels=levels;r.repeatCache=null;r.backgroundCacheKey='';app.cfg.backgroundFit=fit;
+ });
+ await test('Canvas resize and sprite caches are stable between settings changes',()=>{
+   const r=app.renderer,c=r.ctx;c.fillStyle='#345678';r.resize();assert(c.fillStyle==='#345678','Unchanged resize clears the canvas');
+   const food=r.foodSprite(),eyes=r.eyeSprite('#ffffff');assert(r.foodSprite()===food&&r.eyeSprite('#ffffff')===eyes,'Sprites rebuilt');
+   const old=app.cfg.glow;app.cfg.glow=old===1?.5:1;assert(r.foodSprite()!==food,'Glow control not applied');app.cfg.glow=old;
+ });
+ await test('Adaptive resolution is bounded, optional and preserves gameplay settings',()=>{
+   const r=app.renderer,original=S.clone(app.cfg),descriptor=Object.getOwnPropertyDescriptor(w,'devicePixelRatio');
+   try{
+     Object.defineProperty(w,'devicePixelRatio',{value:2,configurable:true});Object.assign(app.cfg,{quality:'high',adaptiveQuality:true});r.adaptiveDpr=null;r.resize();r.frameAverage=0;r.adaptCooldown=0;r.slowTime=0;
+     for(let i=0;i<300;i++)r.adaptFrame(.04,true);
+     assert(r.dpr>=1&&r.dpr<2,'Slow frames do not lower bounded resolution');assert(app.cfg.foodCount===original.foodCount&&app.cfg.aiCount===original.aiCount&&app.cfg.speed===original.speed,'Adaptive mode changes gameplay');
+     app.cfg.adaptiveQuality=false;r.adaptFrame(1/60,true);assert(r.dpr===2,'Cannot disable adaptive resolution');
+   }finally{Object.defineProperty(w,'devicePixelRatio',descriptor);Object.assign(app.cfg,original);r.adaptiveDpr=null;r.resize();}
+ });
  await test('High-resolution tiled background stays within render budget',async()=>{
    app.cfg.backgroundFit='tile';app.cfg.backgroundScale=1;app.cfg.skin='original';app.cfg.quality='high';
    frame.style.width='1280px';frame.style.height='720px';await wait(50);app.renderer.resize();

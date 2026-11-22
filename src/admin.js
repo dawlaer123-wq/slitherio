@@ -41,8 +41,8 @@
        if(key==='aiMin'&&this.cfg.aiMax<this.cfg.aiMin){this.cfg.aiMax=this.cfg.aiMin;const e=$('setting-aiMax');if(e){e.value=this.cfg.aiMax;e.previousElementSibling.querySelector('output').textContent=this.cfg.aiMax;}}if(key==='aiMax'&&this.cfg.aiMin>this.cfg.aiMax){this.cfg.aiMin=this.cfg.aiMax;const e=$('setting-aiMin');if(e){e.value=this.cfg.aiMin;e.previousElementSibling.querySelector('output').textContent=this.cfg.aiMin;}}if(key==='speed'&&this.cfg.maxSpeed<this.cfg.speed){this.cfg.maxSpeed=this.cfg.speed;const e=$('setting-maxSpeed');if(e){e.value=this.cfg.maxSpeed;e.previousElementSibling.querySelector('output').textContent=this.cfg.maxSpeed;}}
        if(key==='maxSpeed'&&this.cfg.maxSpeed<this.cfg.speed){this.cfg.maxSpeed=this.cfg.speed;input.value=this.cfg.maxSpeed;out.textContent=this.cfg.maxSpeed;}if((key==='initialLength'||key==='maxLength')&&this.cfg.initialLength>this.cfg.maxLength){this.cfg.maxLength=this.cfg.initialLength;const e=$('setting-maxLength');if(e){e.value=this.cfg.maxLength;e.previousElementSibling.querySelector('output').textContent=this.cfg.maxLength;}}this.changed();
      };wrap.append(input);
-     if(key==='initialScore'){
-       const exact=element('input');exact.type='number';exact.min=a;exact.max=b;exact.step=step;exact.value=this.cfg[key];exact.id='setting-initialScore-exact';exact.setAttribute('aria-label','Точное значение начальных очков');exact.style.marginTop='8px';
+     if(key==='initialScore'||key==='goal'){
+       const exact=element('input');exact.type='number';exact.min=a;exact.max=b;exact.step=step;exact.value=this.cfg[key];exact.id='setting-'+key+'-exact';exact.setAttribute('aria-label',key==='goal'?'Точное значение цели раунда':'Точное значение начальных очков');exact.style.marginTop='8px';
        const update=input.oninput;input.oninput=()=>{update();exact.value=this.cfg[key];};
        exact.oninput=()=>{if(exact.value===''||!exact.validity.valid)return;input.value=exact.value;input.oninput();};
        exact.onchange=()=>{const v=exact.valueAsNumber;if(Number.isFinite(v)){input.value=S.clamp(Math.round(v),a,b);input.oninput();}else exact.value=this.cfg[key];};

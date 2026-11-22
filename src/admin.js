@@ -40,7 +40,15 @@
        if(this.tab==='skin'&&!['skinGlow','material'].includes(key)){if(this.cfg.skin!=='custom'){this.cfg.skin='custom';this.markSkin();}}
        if(key==='aiMin'&&this.cfg.aiMax<this.cfg.aiMin){this.cfg.aiMax=this.cfg.aiMin;const e=$('setting-aiMax');if(e){e.value=this.cfg.aiMax;e.previousElementSibling.querySelector('output').textContent=this.cfg.aiMax;}}if(key==='aiMax'&&this.cfg.aiMin>this.cfg.aiMax){this.cfg.aiMin=this.cfg.aiMax;const e=$('setting-aiMin');if(e){e.value=this.cfg.aiMin;e.previousElementSibling.querySelector('output').textContent=this.cfg.aiMin;}}if(key==='speed'&&this.cfg.maxSpeed<this.cfg.speed){this.cfg.maxSpeed=this.cfg.speed;const e=$('setting-maxSpeed');if(e){e.value=this.cfg.maxSpeed;e.previousElementSibling.querySelector('output').textContent=this.cfg.maxSpeed;}}
        if(key==='maxSpeed'&&this.cfg.maxSpeed<this.cfg.speed){this.cfg.maxSpeed=this.cfg.speed;input.value=this.cfg.maxSpeed;out.textContent=this.cfg.maxSpeed;}if((key==='initialLength'||key==='maxLength')&&this.cfg.initialLength>this.cfg.maxLength){this.cfg.maxLength=this.cfg.initialLength;const e=$('setting-maxLength');if(e){e.value=this.cfg.maxLength;e.previousElementSibling.querySelector('output').textContent=this.cfg.maxLength;}}this.changed();
-     };wrap.append(input);return wrap;
+     };wrap.append(input);
+     if(key==='initialScore'){
+       const exact=element('input');exact.type='number';exact.min=a;exact.max=b;exact.step=step;exact.value=this.cfg[key];exact.id='setting-initialScore-exact';exact.setAttribute('aria-label','Точное значение начальных очков');exact.style.marginTop='8px';
+       const update=input.oninput;input.oninput=()=>{update();exact.value=this.cfg[key];};
+       exact.oninput=()=>{if(exact.value===''||!exact.validity.valid)return;input.value=exact.value;input.oninput();};
+       exact.onchange=()=>{const v=exact.valueAsNumber;if(Number.isFinite(v)){input.value=S.clamp(Math.round(v),a,b);input.oninput();}else exact.value=this.cfg[key];};
+       wrap.append(exact);
+     }
+     return wrap;
    }
    markSkin(){for(const b of document.querySelectorAll('.skin-card'))b.classList.toggle('selected',b.dataset.skin===this.cfg.skin);}
    chooseSkin(name){this.cfg.skin=name;if(name!=='custom'){const p=S.getPalette(name,this.cfg);Object.assign(this.cfg,{primary:p.colors[0],secondary:p.colors[1],tertiary:p.colors[2],head:p.colors[1],eyes:p.eye,highlight:p.highlight,decor:p.decor,pattern:p.pattern});}this.changed();this.showTab('skin');}

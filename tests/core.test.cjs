@@ -49,5 +49,27 @@ test('Opponent variants reuse native materials and contain no country motifs',()
   for(let i=0;i<500;i++)seen.add(w.randomSkin());assert.equal(seen.size,12);
   for(const key of S.botSkins){const p=S.palettes[key];assert.equal(p.colors.length,3);assert.ok(['scales','spots'].includes(p.pattern));assert.ok(!['argentina','venezuela','brazil'].includes(key));}
 });
+test('Opponent starting scores scale with round entry, including reset and respawn',()=>{
+  for(const base of [0,1,40,100,3000,30000]){
+    const w=world({initialScore:base,aiEnabled:true,aiCount:12,aiMin:0,aiMax:36,collision:'safe',respawn:1});
+    const check=s=>{assert.ok(Number.isInteger(s.score));assert.ok(s.score>=Math.round(base*.5)&&s.score<=Math.round(base*3),`${base}: ${s.score}`);assert.equal(s.displayScore,s.score);};
+    w.snakes.filter(s=>!s.player).forEach(check);
+    for(let i=0;i<50;i++){const s=w.addBot();check(s);w.snakes.pop();}
+    const existing=w.snakes[1],score=existing.score;w.player.score=1000000;w.cfg.initialScore=20000;w.sync();assert.equal(existing.score,score);check(w.addBot());w.snakes.pop();
+    const victim=w.snakes[1];w.kill(victim);w.food=[];w.cfg.foodRate=0;for(let i=0;i<70;i++)w.update(1/60,{});
+    const replacement=w.snakes.find(s=>!s.player&&s.spawnTime>0);assert.ok(replacement,'No replacement');check(replacement);
+    w.cfg.initialScore=base;w.reset();w.snakes.filter(s=>!s.player).forEach(check);
+    w.cfg.initialScore=40;w.reset();assert.equal(w.roundInitialScore,40);assert.ok(w.snakes.filter(s=>!s.player).every(s=>s.score>=20&&s.score<=120));
+  }
+});
+test('Manual food rewards below 50 apply to existing gold and preserve death loot',()=>{
+  const w=world({initialScore:40,foodValue:1,aiEnabled:true,aiCount:1,aiMin:0});
+  w.addFood(w.player.x,w.player.y,1);const normal=w.food.at(-1);assert.equal(normal.value,1);
+  w.addFood(100,100,1.25);const rich=w.food.at(-1);w.kill(w.snakes[1]);const loot=w.food.at(-1),lootValue=loot.value;
+  w.cfg.foodValue=7;w.sync();assert.equal(normal.value,7);assert.equal(rich.value,8.75);assert.equal(loot.value,lootValue);
+  const initial=w.player.score;w.collect(w.player,normal);assert.equal(w.player.score,initial+7);
+  w.sync();assert.equal(rich.value,8.75);
+  for(const value of [1,7,40,499,1500])assert.equal(S.sanitize({foodValue:value}).foodValue,value);
+});
 console.log(`${tests.filter(t=>t.pass).length}/${tests.length} tests passed`);
 fs.writeFileSync(path.join(__dirname,'test-results.json'),JSON.stringify({tests},null,2));

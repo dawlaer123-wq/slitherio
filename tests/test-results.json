@@ -87,6 +87,14 @@
     {
       "name": "Opponent variants reuse native materials and contain no country motifs",
       "pass": true
+    },
+    {
+      "name": "Opponent starting scores scale with round entry, including reset and respawn",
+      "pass": true
+    },
+    {
+      "name": "Manual food rewards below 50 apply to existing gold and preserve death loot",
+      "pass": true
     }
   ]
 }

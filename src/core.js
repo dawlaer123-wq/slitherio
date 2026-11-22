@@ -22,7 +22,7 @@
   const alive=o=>o.alive,liveSnake=s=>s.player||s.alive,liveEffect=e=>e.age<e.duration;
   class Snake{
     constructor(world,player=false){
-      this.id=world.nextId++;this.player=player;this.alive=true;this.angle=world.rng.range(-Math.PI,Math.PI);this.desired=this.angle;this.velocity=0;this.score=player?world.cfg.initialScore:world.rng.range(1500,45000);this.length=player?world.cfg.initialLength:world.rng.range(300,1350)*world.cfg.aiSize;this.skin=player?world.cfg.skin:world.randomSkin();this.preferredSkin=this.skin;
+      this.id=world.nextId++;this.player=player;this.alive=true;this.angle=world.rng.range(-Math.PI,Math.PI);this.desired=this.angle;this.velocity=0;this.score=player?world.cfg.initialScore:world.randomBotScore();this.length=player?world.cfg.initialLength:world.rng.range(300,1350)*world.cfg.aiSize;this.skin=player?world.cfg.skin:world.randomSkin();this.preferredSkin=this.skin;
       const pos=world.spawnPosition(player);this.x=pos.x;this.y=pos.y;if(!player&&world.player){this.angle=Math.atan2(world.player.y-this.y,world.player.x-this.x)+world.rng.range(-.6,.6);this.desired=this.angle;}this.spawnTime=world.time;this.trail=[];this.think=0;this.target=null;this.boost=false;this.boostClock=0;this.collected=0;this.kills=0;
       let tx=this.x,ty=this.y;for(let d=5;d<this.length+20;d+=5){const a=this.angle+Math.sin(d/160)*.85;tx-=Math.cos(a)*5;ty-=Math.sin(a)*5;this.trail.push({x:tx,y:ty});}
       this.lastSample={x:this.x,y:this.y};
@@ -54,13 +54,20 @@
   }
   class World{
     constructor(cfg,seed=Date.now()){this.cfg=cfg;this.rng=new RNG(seed);this.nextId=1;this.time=0;this.food=[];this.snakes=[];this.effects=[];this.foodGrid=new Grid();this.bodyGrid=new Grid(90);this.foodNear=[];this.bodyNear=[];this.deaths=new Map();this.demo=true;this.respawnClock=0;this.foodClock=0;this.goalReached=false;this.size=cfg.mapSize;this.onEnd=null;this.onEat=null;this.reset();}
+    randomBotScore(){
+      // Anchor new opponents to this round's starting score, not the growing player score.
+      // Averaging two samples favours comparable opponents over the ends of the range.
+      const base=this.roundInitialScore;
+      const min=Math.round(base*.5),max=Math.round(base*3);
+      return Math.round(min+(max-min)*(this.rng.next()+this.rng.next())*.5);
+    }
     randomSkin(){if(!this.cfg.variety)return'jade';return S.botSkins[Math.floor(this.rng.next()*S.botSkins.length)];}
     spawnPosition(player){
       if(player)return{x:this.size*.5,y:this.size*.5};
       for(let i=0;i<35;i++){const p=this.player;const angle=this.rng.range(0,TAU),rad=this.rng.range(560,Math.min(1700,this.size*.38));const x=S.clamp((p?.x||this.size/2)+Math.cos(angle)*rad,160,this.size-160),y=S.clamp((p?.y||this.size/2)+Math.sin(angle)*rad,160,this.size-160);if(!this.snakes.some(s=>Math.hypot(x-s.x,y-s.y)<180))return{x,y};}return{x:this.rng.range(200,this.size-200),y:this.rng.range(200,this.size-200)};
     }
     reset(){
-      this.time=0;this.size=this.cfg.mapSize;this.food=[];this.snakes=[];this.effects=[];this.goalReached=false;this.foodClock=0;this.respawnClock=0;this.player=new Snake(this,true);this.player.angle=-.65;this.player.desired=-.65;
+      this.appliedFoodValue=this.cfg.foodValue;this.roundInitialScore=this.cfg.initialScore;this.time=0;this.size=this.cfg.mapSize;this.food=[];this.snakes=[];this.effects=[];this.goalReached=false;this.foodClock=0;this.respawnClock=0;this.player=new Snake(this,true);this.player.angle=-.65;this.player.desired=-.65;
       this.player.trail=[];let tx=this.player.x,ty=this.player.y;for(let d=5;d<this.player.length+20;d+=5){const a=-.65+.7*Math.sin(d/125);tx-=Math.cos(a)*5;ty-=Math.sin(a)*5;this.player.trail.push({x:tx,y:ty});}
       this.snakes.push(this.player);for(let i=0;i<this.botTarget();i++)this.addBot();this.populateFood(this.cfg.foodCount);
       // A discoverable first gold trail, not a scripted score increase.
@@ -69,7 +76,7 @@
     }
     botTarget(){const c=this.cfg;return c.aiEnabled?S.clamp(Math.round(c.aiCount),Math.round(c.aiMin),Math.round(c.aiMax)):0;}
     addBot(){const s=new Snake(this);s.worldSize=this.cfg.aiSize;this.snakes.push(s);return s;}
-    addFood(x,y,rich=1){if(this.food.length>8500)return;this.food.push({id:this.nextId++,x:S.clamp(x,35,this.size-35),y:S.clamp(y,35,this.size-35),size:this.rng.range(.72,1.2)*rich,value:this.cfg.foodValue*rich,phase:this.rng.range(0,TAU),alive:true});}
+    addFood(x,y,rich=1){if(this.food.length>8500)return;this.food.push({id:this.nextId++,x:S.clamp(x,35,this.size-35),y:S.clamp(y,35,this.size-35),size:this.rng.range(.72,1.2)*rich,value:this.cfg.foodValue*rich,rewardScale:rich,phase:this.rng.range(0,TAU),alive:true});}
     populateFood(n){
       while(this.food.length<n){const near=this.rng.next()<.62,px=near?this.player.x:this.rng.range(150,this.size-150),py=near?this.player.y:this.rng.range(150,this.size-150);const x=S.clamp(px+this.rng.range(-1100,1100),120,this.size-120),y=S.clamp(py+this.rng.range(-1100,1100),120,this.size-120);if(this.rng.next()<.83){const a=this.rng.range(0,TAU),bend=this.rng.range(-1.3,1.3),len=Math.min(n-this.food.length,Math.floor(this.rng.range(18,65)*this.cfg.density));for(let i=0;i<len;i++){const t=i/len*Math.PI*1.8;this.addFood(x+Math.cos(a)*i*11+Math.sin(t)*bend*85,y+Math.sin(a)*i*11+Math.cos(t)*bend*85,this.rng.range(.8,1.35));}}else this.addFood(x,y,.7);}
     }
@@ -92,11 +99,15 @@
     kill(s,killer){
       if(!s.alive)return;s.alive=false;if(killer&&killer!==s)killer.kills++;
       const pts=s.points();const count=Math.min(300,Math.ceil(s.length/9));const val=Math.max(this.cfg.foodValue,s.score/count*.55);
-      for(let i=0;i<pts.length;i+=2){this.addFood(pts[i].x+this.rng.range(-s.radius*.5,s.radius*.5),pts[i].y+this.rng.range(-s.radius*.5,s.radius*.5),1.3);if(this.food.length)this.food[this.food.length-1].value=val;}
+      for(let i=0;i<pts.length;i+=2){this.addFood(pts[i].x+this.rng.range(-s.radius*.5,s.radius*.5),pts[i].y+this.rng.range(-s.radius*.5,s.radius*.5),1.3);if(this.food.length){this.food[this.food.length-1].value=val;this.food[this.food.length-1].rewardScale=null;}}
       if(this.cfg.collisionEffects)this.effects.push({x:s.x,y:s.y,age:0,duration:.8,type:'death',r:s.radius});
       if(s.player&&!this.demo&&!this.goalReached){this.goalReached=true;this.onEnd?.(false);}
     }
     sync(){
+      if(this.appliedFoodValue!==this.cfg.foodValue){
+        for(const f of this.food)if(f.alive&&Number.isFinite(f.rewardScale))f.value=this.cfg.foodValue*f.rewardScale;
+        this.appliedFoodValue=this.cfg.foodValue;
+      }
       this.player.skin=this.cfg.skin;this.player.length=Math.min(this.player.length,this.cfg.maxLength);this.player._points=null;
       const target=this.botTarget();const live=this.snakes.filter(s=>!s.player&&s.alive);if(live.length>target){const ids=new Set(live.slice(target));this.snakes=this.snakes.filter(s=>!ids.has(s));}
       this.food=this.food.filter(f=>f.alive).slice(0,this.cfg.foodCount+800);

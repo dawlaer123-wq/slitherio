@@ -12,7 +12,7 @@ window.SA = window.SA || {};
   };
   // Each control has a single source of truth; imported values use the same constraints.
   S.schema = [
-    ['skin','Скин','select',['original','venezuela','argentina','bolivia','peru','custom','brazil','leopard','jade','ruby']],
+    ['skin','Скин','select',['original','venezuela','argentina','bolivia','peru','italy','spain','custom','brazil','leopard','jade','ruby']],
     ['primary','Основной цвет','color'],['secondary','Вторичный цвет','color'],['tertiary','Дополнительный цвет','color'],['head','Цвет головы','color'],['eyes','Цвет глаз','color'],['highlight','Цвет бликов','color'],['decor','Цвет декора','color'],
     ['pattern','Форма узора','select',['spots','sun','stars','scales','diamonds','none']],['patternSize','Размер узоров','range',.4,2.5,.1],['patternGap','Расстояние узоров','range',20,140,1],['skinGlow','Свечение материала','range',0,1,.05],['material','Яркость материала','range',.5,1.6,.05],
     ['arena','Арена','select',['stone','mechanical','nature','cavern','moss','volcanic','crystal','abyss','desert']],['floor','Текстура пола','select',['brick','slate','noise']],['environment','Цвет окружения','color'],['decorations','Плотность декора','range',0,2,.1],['particles','Красные частицы','range',0,700,10],['lighting','Освещение','range',.35,1.5,.05],['glow','Свечение золота','range',0,2,.1],['shadows','Глубина теней','range',0,1,.05],['absorption','Эффект поглощения','check'],['collisionEffects','Эффект столкновений','check'],['quality','Качество графики','select',['high','medium','low']],['adaptiveQuality','Автооптимизация при просадках FPS','check'],['zoom','Масштаб камеры','range',.5,1.8,.05],['wheelZoom','Масштабирование колёсиком мыши','check'],['wheelZoomSpeed','Чувствительность колёсика','range',.2,3,.1],['boostGlow','Свечение игрока при ускорении','check'],['boostGlowColor','Цвет свечения при ускорении','color'],['boostGlowIntensity','Сила свечения при ускорении','range',0,2,.1],['density','Плотность золотых дорожек','range',.3,2,.1],
@@ -44,6 +44,8 @@ window.SA = window.SA || {};
     original:{colors:['#83bedc','#fff6df','#87c5e4'],decor:'#dc982f',pattern:'spots',eye:'#ffffff',highlight:'#ffffff'},
     argentina:{colors:['#80c6ed','#fff9e9','#80c6ed'],decor:'#e3ac33',pattern:'sun',eye:'#ffffff',highlight:'#ffffff'},
     venezuela:{colors:['#f7d52b','#133cc5','#e52e42'],decor:'#ffffff',pattern:'stars',eye:'#ffffff',highlight:'#fffde6'},
+    italy:{colors:['#009246','#ffffff','#ce2b37'],decor:'#009246',pattern:'none',eye:'#ffffff',highlight:'#ffffff'},
+    spain:{colors:['#aa151b','#f1bf00','#aa151b'],bandEdge:.5,decor:'#aa151b',pattern:'none',eye:'#ffffff',highlight:'#fff6d8'},
     peru:{colors:['#d91023','#ffffff','#d91023'],decor:'#d91023',pattern:'none',eye:'#ffffff',highlight:'#ffffff'},
     bolivia:{colors:['#d52b1e','#f9e300','#007934'],decor:'#f9e300',pattern:'none',eye:'#ffffff',highlight:'#fffde6'},
     brazil:{colors:['#169852','#e5d137','#17633d'],decor:'#234ed2',pattern:'diamonds',eye:'#ffffff',highlight:'#d1ffb6'},

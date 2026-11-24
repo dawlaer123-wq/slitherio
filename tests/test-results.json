@@ -95,6 +95,10 @@
     {
       "name": "Manual food rewards below 50 apply to existing gold and preserve death loot",
       "pass": true
+    },
+    {
+      "name": "Player collision assist protects head and neck from both sides, but not body or boundary",
+      "pass": true
     }
   ]
 }

@@ -5,7 +5,7 @@
    skin:{name:'PLAYER SKIN',ru:'Скин игрока',keys:['primary','secondary','tertiary','head','eyes','highlight','decor','pattern','patternSize','patternGap','skinGlow','material']},
    visual:{name:'VISUAL SETTINGS',ru:'Окружение и свет',keys:['arena','floor','environment','decorations','particles','lighting','glow','shadows','absorption','collisionEffects','quality','adaptiveQuality','zoom','wheelZoom','wheelZoomSpeed','boostGlow','boostGlowColor','boostGlowIntensity','density']},
    background:{name:'ARENA BACKGROUND',ru:'Свой фон арены',keys:['backgroundPreset','backgroundFit','backgroundScale','backgroundOpacity','backgroundDarken']},
-   gameplay:{name:'GAMEPLAY SETTINGS',ru:'Физика и прогресс',keys:['initialLength','initialScore','speed','maxSpeed','turnRate','acceleration','growth','foodCount','foodSize','foodValue','goal','mapSize','foodRate','collision','boosting','maxLength']},
+   gameplay:{name:'GAMEPLAY SETTINGS',ru:'Физика и прогресс',keys:['initialLength','initialScore','speed','maxSpeed','turnRate','acceleration','growth','foodCount','foodSize','foodValue','goal','mapSize','foodRate','collision','playerCollisionAssist','playerHeadGrace','boosting','maxLength']},
    ai:{name:'AI SETTINGS',ru:'Участники арены',keys:['aiEnabled','aiCount','aiMin','aiMax','aiSpeed','difficulty','aggression','appetite','turnFrequency','aiSize','respawn','variety']},
    ui:{name:'UI SETTINGS',ru:'Интерфейс и управление',keys:['numbers','uiPosition','uiScale','textColor','progressColor','joystick','labels','currency','language','sound']}
  };
@@ -27,7 +27,7 @@
      if(id==='skin')this.skinPanel(panel);
      if(id==='visual')panel.append(element('p','hint','Колёсико вниз отдаляет камеру, вверх — приближает. Свечение включается при ускорении; в предпросмотре показан его цвет и сила.'));
      if(id==='background')this.backgroundPanel(panel);
-     if(id==='gameplay')panel.append(element('p','hint','Все значения — виртуальные игровые очки. Начальная длина, очки и размер мира меняются со следующего раунда. Прочие параметры действуют сразу. Ускорение расходует очки и длину.'));
+     if(id==='gameplay')panel.append(element('p','hint','Все значения — виртуальные игровые очки. Начальная длина, очки и размер мира меняются со следующего раунда. Прочие параметры действуют сразу. Ускорение расходует очки и длину. «Мягкие столкновения» защищают только игрока при контакте с головой и передней частью тела соперника с любой стороны. Размер безопасной зоны регулируется ниже. Остальное тело и граница арены остаются опасными.'));
      if(id==='ai')panel.append(element('p','hint','Численность поддерживается между минимумом и максимумом. Новые участники появляются с заданной задержкой. После появления действует защита 4 секунды.'));
      if(id==='visual')panel.append(element('p','hint','Процедурные арены создаются из кэшируемых текстур Canvas — без фотографий, мыла и лишней нагрузки. Изменения видны без перезапуска.'));
      const grid=element('div','grid');for(const key of g.keys)grid.append(this.field(key));panel.append(grid);

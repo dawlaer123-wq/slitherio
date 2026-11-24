@@ -71,5 +71,25 @@ test('Manual food rewards below 50 apply to existing gold and preserve death loo
   w.sync();assert.equal(rich.value,8.75);
   for(const value of [1,7,40,499,1500])assert.equal(S.sanitize({foodValue:value}).foodValue,value);
 });
+test('Player collision assist protects head and neck from both sides, but not body or boundary',()=>{
+  function scene(assist,x,y,grace=90){
+    const w=world({aiEnabled:true,aiCount:1,aiMin:0,collision:'classic',playerCollisionAssist:assist,playerHeadGrace:grace});
+    w.time=5;w.food=[];w.ai=()=>{};
+    const p=w.player,b=w.snakes[1];
+    for(const s of [p,b]){s.spawnTime=0;s.advance=()=>{};s._points=null;}
+    b.x=1200;b.y=1000;b.angle=0;b.trail=[];for(let x=1195;x>=800;x-=5)b.trail.push({x,y:1000});
+    p.x=x;p.y=y;p.angle=Math.PI/2;p.trail=[];for(let d=5;d<=300;d+=5)p.trail.push({x,y:y-d});
+    return w;
+  }
+  for(const [x,y]of [[1200,1000],[1155,1010],[1155,990]]){const w=scene(true,x,y);w.update(1/60,{});assert.ok(w.player.alive,`Protected contact ${x},${y}`);}
+  const classic=scene(false,1200,1000);classic.update(1/60,{});assert.equal(classic.player.alive,false);
+  const body=scene(true,1000,1000);body.update(1/60,{});assert.equal(body.player.alive,false);
+  const narrow=scene(true,1125,1000,40);narrow.update(1/60,{});assert.equal(narrow.player.alive,false);
+  const wide=scene(true,1125,1000,120);wide.update(1/60,{});assert.ok(wide.player.alive);
+  const border=scene(true,-1,1000);border.update(1/60,{});assert.equal(border.player.alive,false);
+  const bots=world({aiEnabled:true,aiCount:2,aiMin:0,playerCollisionAssist:true});bots.time=5;bots.food=[];bots.ai=()=>{};
+  const a=bots.snakes[1],b=bots.snakes[2];for(const s of bots.snakes){s.spawnTime=0;s.advance=()=>{};s._points=null;}
+  a.x=b.x=1000;a.y=b.y=1000;a.trail=[{x:995,y:1000}];b.trail=[{x:1005,y:1000}];bots.update(1/60,{});assert.equal(a.alive,false);assert.equal(b.alive,false);
+});
 console.log(`${tests.filter(t=>t.pass).length}/${tests.length} tests passed`);
 fs.writeFileSync(path.join(__dirname,'test-results.json'),JSON.stringify({tests},null,2));

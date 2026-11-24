@@ -124,7 +124,7 @@
         for(const f of this.foodGrid.near(s.x,s.y,s.radius+70,this.foodNear)){const dx=s.x-f.x,dy=s.y-f.y,d=Math.hypot(dx,dy);if(d<s.radius+this.cfg.foodSize*f.size){this.collect(s,f);}else if(s.player&&d<s.radius+60){const pull=(1-d/(s.radius+60))*220*dt;f.x+=dx/(d||1)*pull;f.y+=dy/(d||1)*pull;}}
         if(s.x<s.radius||s.y<s.radius||s.x>this.size-s.radius||s.y>this.size-s.radius){if(this.cfg.collision==='safe'||this.demo&&s.player){s.x=S.clamp(s.x,s.radius+2,this.size-s.radius-2);s.y=S.clamp(s.y,s.radius+2,this.size-s.radius-2);s.desired=Math.atan2(this.size/2-s.y,this.size/2-s.x);s.angle=s.desired;}else deaths.set(s,null);}
         if(this.cfg.collision==='safe'||this.time-s.spawnTime<4)continue;
-        for(const b of this.bodyGrid.near(s.x,s.y,s.radius+34,this.bodyNear)){if(b.snake===s||!b.snake.alive||this.time-b.snake.spawnTime<3)continue;if(this.cfg.collision==='body-only'&&b.offset<40)continue;if(Math.hypot(s.x-b.x,s.y-b.y)<s.radius*.65+b.r*.8){deaths.set(s,b.snake);break;}}
+        for(const b of this.bodyGrid.near(s.x,s.y,s.radius+34,this.bodyNear)){if(b.snake===s||!b.snake.alive||this.time-b.snake.spawnTime<3)continue;if(this.cfg.collision==='body-only'&&b.offset<40)continue;if(s.player&&this.cfg.playerCollisionAssist&&b.offset<this.cfg.playerHeadGrace)continue;if(Math.hypot(s.x-b.x,s.y-b.y)<s.radius*.65+b.r*.8){deaths.set(s,b.snake);break;}}
       }
       for(const [s,k] of deaths)this.kill(s,k);
       compact(this.food,alive);compact(this.snakes,liveSnake);

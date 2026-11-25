@@ -13,6 +13,10 @@
       "pass": true
     },
     {
+      "name": "Lower default food count migrates only the previous default and keeps other preferences",
+      "pass": true
+    },
+    {
       "name": "All configurable defaults have schema or asset metadata",
       "pass": true
     },
@@ -54,6 +58,10 @@
     },
     {
       "name": "Death drops collectible gold and reports loss once",
+      "pass": true
+    },
+    {
+      "name": "Ordinary food is red-classified, death loot stays gold and drop count is reduced",
       "pass": true
     },
     {

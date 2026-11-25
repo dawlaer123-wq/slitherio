@@ -6,7 +6,7 @@ window.SA = window.SA || {};
     skin:'original', primary:'#88c8ed', secondary:'#fff6dd', tertiary:'#83c4e8', head:'#91cce9', eyes:'#ffffff', highlight:'#ffffff', decor:'#e6a028', pattern:'spots', patternSize:1, patternGap:56, skinGlow:.2, material:1,
     arena:'stone', floor:'brick', environment:'#24313a', decorations:1, particles:220, lighting:1, glow:1, shadows:.7, absorption:true, collisionEffects:true, quality:'high', adaptiveQuality:true, zoom:1, wheelZoom:true, wheelZoomSpeed:1, boostGlow:true, boostGlowColor:'#a4efff', boostGlowIntensity:1, density:1,
     background:'', backgroundName:'', backgroundPreset:'custom', backgroundFit:'cover', backgroundScale:1, backgroundOpacity:1, backgroundDarken:.3,
-    initialLength:700, initialScore:3000, speed:145, maxSpeed:265, turnRate:3.4, acceleration:350, growth:4, foodCount:1700, foodSize:7, goal:150000, mapSize:4800, foodRate:18, foodValue:240, collision:'classic', playerCollisionAssist:false, playerHeadGrace:90, boosting:true, maxLength:4200,
+    initialLength:700, initialScore:3000, speed:145, maxSpeed:265, turnRate:3.4, acceleration:350, growth:4, foodCount:700, foodSize:7, goal:150000, mapSize:4800, foodRate:18, foodValue:240, collision:'classic', playerCollisionAssist:false, playerHeadGrace:90, boosting:true, maxLength:4200,
     aiEnabled:true, aiCount:14, aiMin:8, aiMax:24, aiSpeed:125, difficulty:.8, aggression:.25, appetite:1, turnFrequency:.8, aiSize:1, respawn:5, variety:true,
     numbers:true, uiPosition:'top', uiScale:1, textColor:'#b0efa6', progressColor:'#2bfa1b', joystick:'glass', labels:true, currency:'ARS', language:'ru', sound:false
   };
@@ -68,7 +68,7 @@ window.SA = window.SA || {};
   S.storage={
     get(key,fallback){try{return JSON.parse(localStorage.getItem('serpent.'+key))??fallback;}catch{return fallback;}},
     put(key,value){localStorage.setItem('serpent.'+key,JSON.stringify(value));},
-    settings(){return S.sanitize(this.get('settings',S.defaults));}
+    settings(){const raw=this.get('settings',S.defaults);if(raw&&raw.foodCount===1700){raw.foodCount=700;this.put('settings',raw);}return S.sanitize(raw);}
   };
   // Large images live in IndexedDB, not in the small synchronous LocalStorage quota.
   let assetDB,saveQueue=Promise.resolve(),storedBackground;

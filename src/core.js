@@ -71,12 +71,12 @@
       this.player.trail=[];let tx=this.player.x,ty=this.player.y;for(let d=5;d<this.player.length+20;d+=5){const a=-.65+.7*Math.sin(d/125);tx-=Math.cos(a)*5;ty-=Math.sin(a)*5;this.player.trail.push({x:tx,y:ty});}
       this.snakes.push(this.player);for(let i=0;i<this.botTarget();i++)this.addBot();this.populateFood(this.cfg.foodCount);
       // A discoverable first gold trail, not a scripted score increase.
-      for(let i=0;i<35;i++){const t=i*.05;this.addFood(this.player.x+60+Math.cos(-.8+t)*i*13,this.player.y-45-Math.sin(.8+t)*i*13,1.25);}
+      for(let i=0;i<14;i++){const t=i*.05;this.addFood(this.player.x+60+Math.cos(-.8+t)*i*13,this.player.y-45-Math.sin(.8+t)*i*13,1.25);}
       this.reindex();
     }
     botTarget(){const c=this.cfg;return c.aiEnabled?S.clamp(Math.round(c.aiCount),Math.round(c.aiMin),Math.round(c.aiMax)):0;}
     addBot(){const s=new Snake(this);s.worldSize=this.cfg.aiSize;this.snakes.push(s);return s;}
-    addFood(x,y,rich=1){if(this.food.length>8500)return;this.food.push({id:this.nextId++,x:S.clamp(x,35,this.size-35),y:S.clamp(y,35,this.size-35),size:this.rng.range(.72,1.2)*rich,value:this.cfg.foodValue*rich,rewardScale:rich,phase:this.rng.range(0,TAU),alive:true});}
+    addFood(x,y,rich=1,dropped=false){if(this.food.length>8500)return;this.food.push({id:this.nextId++,x:S.clamp(x,35,this.size-35),y:S.clamp(y,35,this.size-35),size:this.rng.range(.72,1.2)*rich,value:this.cfg.foodValue*rich,rewardScale:dropped?null:rich,dropped,phase:this.rng.range(0,TAU),alive:true});}
     populateFood(n){
       while(this.food.length<n){const near=this.rng.next()<.62,px=near?this.player.x:this.rng.range(150,this.size-150),py=near?this.player.y:this.rng.range(150,this.size-150);const x=S.clamp(px+this.rng.range(-1100,1100),120,this.size-120),y=S.clamp(py+this.rng.range(-1100,1100),120,this.size-120);if(this.rng.next()<.83){const a=this.rng.range(0,TAU),bend=this.rng.range(-1.3,1.3),len=Math.min(n-this.food.length,Math.floor(this.rng.range(18,65)*this.cfg.density));for(let i=0;i<len;i++){const t=i/len*Math.PI*1.8;this.addFood(x+Math.cos(a)*i*11+Math.sin(t)*bend*85,y+Math.sin(a)*i*11+Math.cos(t)*bend*85,this.rng.range(.8,1.35));}}else this.addFood(x,y,.7);}
     }
@@ -98,8 +98,8 @@
     }
     kill(s,killer){
       if(!s.alive)return;s.alive=false;if(killer&&killer!==s)killer.kills++;
-      const pts=s.points();const count=Math.min(300,Math.ceil(s.length/9));const val=Math.max(this.cfg.foodValue,s.score/count*.55);
-      for(let i=0;i<pts.length;i+=2){this.addFood(pts[i].x+this.rng.range(-s.radius*.5,s.radius*.5),pts[i].y+this.rng.range(-s.radius*.5,s.radius*.5),1.3);if(this.food.length){this.food[this.food.length-1].value=val;this.food[this.food.length-1].rewardScale=null;}}
+      const pts=s.points(),count=Math.min(90,Math.max(8,Math.ceil(s.length/30))),stride=Math.max(1,Math.floor(pts.length/count)),val=Math.max(this.cfg.foodValue,s.score/count*.55);
+      for(let i=0;i<pts.length;i+=stride){this.addFood(pts[i].x+this.rng.range(-s.radius*.5,s.radius*.5),pts[i].y+this.rng.range(-s.radius*.5,s.radius*.5),1.3,true);if(this.food.length){this.food[this.food.length-1].value=val;}}
       if(this.cfg.collisionEffects)this.effects.push({x:s.x,y:s.y,age:0,duration:.8,type:'death',r:s.radius});
       if(s.player&&!this.demo&&!this.goalReached){this.goalReached=true;this.onEnd?.(false);}
     }
@@ -117,7 +117,7 @@
       if(this.goalReached&&!this.demo)return;this.time+=dt;const p=this.player;
       if(this.demo&&p.alive)this.ai(p,dt);else if(p.alive){if(Number.isFinite(input.angle))p.desired=input.angle;p.boost=!!input.boost&&this.cfg.boosting;}
       for(const s of this.snakes){if(!s.alive)continue;if(!s.player)this.ai(s,dt);s.advance(dt,this.cfg);
-        if(s.boost&&this.cfg.boosting&&s.score>800){s.score=Math.max(800,s.score-dt*80);s.length=Math.max(180,s.length-dt*8);s.boostClock+=dt;if(s.boostClock>.3){s.boostClock=0;const tail=s.trail[s.trail.length-1];if(tail)this.addFood(tail.x,tail.y,.65);}}
+        if(s.boost&&this.cfg.boosting&&s.score>800){s.score=Math.max(800,s.score-dt*80);s.length=Math.max(180,s.length-dt*8);s.boostClock+=dt;if(s.boostClock>.3){s.boostClock=0;const tail=s.trail[s.trail.length-1];if(tail)this.addFood(tail.x,tail.y,.65,true);}}
       }
       this.reindex();const deaths=this.deaths;deaths.clear();
       for(const s of this.snakes){if(!s.alive)continue;

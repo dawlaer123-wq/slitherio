@@ -7,6 +7,12 @@ function world(over){const w=new S.World(cfg(over),1234);w.demo=false;return w;}
 test('Grid reuses buckets, clears stale members and supports negative coordinates',()=>{const g=new S.Grid(90),a={x:-15,y:30},b={x:95,y:30};g.add(a);g.add(b);const out=[],bucket=g.cells.get(-1);g.near(-15,30,20,out);assert.ok(out.includes(a));assert.ok(!out.includes(b));g.clear();assert.equal(g.near(-15,30,20,out).length,0);g.add(a);assert.equal(g.cells.get(-1),bucket);assert.equal(g.near(-15,30,20,out),out);assert.equal(out.length,1);});
 test('Body collision sample pool and snake point buffers reuse storage safely',()=>{const w=world({collision:'safe',foodCount:200}),s=w.player,pts=s.points();w.reindex();const sample=s._bodySamples[0];s.advance(1/60,w.cfg);assert.equal(s.points(),pts);w.reindex();assert.equal(s._bodySamples[0],sample);assert.equal(sample.x,s.x);assert.ok(s.bounds.minX<=s.x&&s.bounds.maxX>=s.x);});
 test('Sanitize imports, numeric clamps, unsafe background, unknown properties',()=>{const c=S.sanitize({speed:Infinity,aiCount:1e9,glow:-5,primary:'javascript:x',background:'http://external',__proto__:{danger:1}});assert.equal(c.speed,145);assert.equal(c.aiCount,36);assert.equal(c.glow,0);assert.equal(c.primary,S.defaults.primary);assert.equal(c.background,'');assert.equal(c.danger,undefined);});
+test('Lower default food count migrates only the previous default and keeps other preferences',()=>{
+  const get=context.localStorage.getItem,set=context.localStorage.setItem;let stored=JSON.stringify({foodCount:1700,skin:'italy'});
+  try{context.localStorage.getItem=()=>stored;context.localStorage.setItem=(_,value)=>{stored=value;};const c=S.storage.settings();assert.equal(c.foodCount,700);assert.equal(c.skin,'italy');assert.equal(JSON.parse(stored).foodCount,700);
+    stored=JSON.stringify({foodCount:900,skin:'spain'});const custom=S.storage.settings();assert.equal(custom.foodCount,900);assert.equal(custom.skin,'spain');
+  }finally{context.localStorage.getItem=get;context.localStorage.setItem=set;}
+});
 test('All configurable defaults have schema or asset metadata',()=>{for(const k of Object.keys(S.defaults))assert.ok(S.schema.some(s=>s[0]===k)||['background','backgroundName'].includes(k),k);});
 test('Fixed movement and turn-rate bound',()=>{const w=world({collision:'safe'}),s=w.player;s.velocity=145;s.desired=s.angle+Math.PI;const a=s.angle,x=s.x,y=s.y;s.advance(1/60,w.cfg);assert.ok(Math.abs(S.angleDiff(s.angle,a))<=w.cfg.turnRate/60+1e-8);assert.ok(Math.abs(Math.hypot(s.x-x,s.y-y)-145/60)<1e-8);});
 test('Head history follows exact path with no stretching',()=>{const w=world({collision:'safe'}),s=w.player;s.trail=[];s.length=700;s.velocity=145;s.lastSample={x:s.x,y:s.y};for(let i=0;i<600;i++){s.desired=Math.sin(i/80)*1.7;s.advance(1/60,w.cfg);}assert.ok(s.trail.length>100);for(let i=1;i<s.trail.length;i++)assert.ok(Math.abs(Math.hypot(s.trail[i].x-s.trail[i-1].x,s.trail[i].y-s.trail[i-1].y)-5)<1e-6);});
@@ -18,6 +24,19 @@ test('AI actively moves, seeks food, and consumes it',()=>{const w=world({aiEnab
 test('AI disabled removes all opponents',()=>{const w=world({aiEnabled:true,aiCount:4,aiMin:0});w.cfg.aiEnabled=false;w.sync();assert.equal(w.snakes.length,1);});
 test('AI target min/max and respawn delay',()=>{const w=world({aiEnabled:true,aiCount:0,aiMin:2,aiMax:3,respawn:1,collision:'safe'});assert.equal(w.snakes.length,3);w.kill(w.snakes[1],null);for(let i=0;i<70;i++)w.update(1/60,{});assert.equal(w.snakes.filter(s=>s.alive&&!s.player).length,2);});
 test('Death drops collectible gold and reports loss once',()=>{const w=world(),p=w.player;let events=0;w.onEnd=win=>{assert.equal(win,false);events++;};const n=w.food.length;w.kill(p,null);w.kill(p,null);assert.ok(w.food.length>n);assert.equal(events,1);assert.equal(p.alive,false);});
+test('Ordinary food is red-classified, death loot stays gold and drop count is reduced',()=>{
+  assert.equal(S.defaults.foodCount,700);
+  const w=world({initialLength:700,foodCount:200,aiEnabled:true,aiCount:1,aiMin:0});
+  assert.ok(w.food.filter(f=>f.alive).every(f=>!f.dropped),'Starting/ambient food should be regular red food');
+  const regular=w.food.find(f=>f.alive);assert.equal(regular.dropped,false);
+  const victim=w.snakes[1],length=victim.length,oldGoldCount=Math.ceil(length/10);
+  const before=w.food.length;w.kill(victim);const loot=w.food.slice(before);
+  assert.ok(loot.length>0&&loot.length<=Math.ceil(length/25)+2,`Too many death drops: ${loot.length}`);
+  assert.ok(loot.every(f=>f.dropped&&f.rewardScale===null),'Death loot should retain gold-drop classification');
+  assert.ok(loot.reduce((sum,f)=>sum+f.value,0)>=victim.score*.5,'Reduced drops lost too much total reward');
+  assert.ok(loot.length<oldGoldCount*.55,'Death loot count was not reduced enough');
+  const tail=victim.trail.at(-1);if(tail){w.addFood(tail.x,tail.y,.65,true);assert.equal(w.food.at(-1).dropped,true);}
+});
 test('Head-to-body collision kills and credits opponent',()=>{const w=world({aiEnabled:true,aiCount:1,aiMin:0,collision:'classic'});const p=w.player,b=w.snakes[1];w.time=5;p.spawnTime=b.spawnTime=0;p.velocity=0;p.x=1000;p.y=1000;p.trail=[{x:990,y:1000},{x:980,y:1000}];p.lastSample={x:1000,y:1000};b.x=1200;b.y=1000;b.trail=[];for(let x=1195;x>800;x-=5)b.trail.push({x,y:1000});b.lastSample={x:b.x,y:b.y};w.update(1/60,{});assert.equal(p.alive,false);assert.equal(b.kills,1);});
 test('Boundary death and safe mode',()=>{for(const collision of ['classic','safe']){const w=world({collision});w.player.x=1;w.player.y=100;w.update(1/60,{});assert.equal(w.player.alive,collision==='safe');}});
 test('Goal continues playing; boundary ends once and reset works',()=>{const w=world({goal:3001,collision:'classic'});let n=0;w.onEnd=()=>n++;w.addFood(w.player.x,w.player.y,1);w.update(1/60,{});w.update(1/60,{});assert.equal(n,0);assert.ok(w.player.alive);assert.ok(w.player.score>w.cfg.goal);w.player.x=-10;w.player.y=100;w.update(1/60,{});w.update(1/60,{});assert.equal(n,1);assert.equal(w.player.alive,false);w.reset();assert.equal(w.goalReached,false);assert.equal(w.player.score,3000);assert.equal(w.player.collected,0);});

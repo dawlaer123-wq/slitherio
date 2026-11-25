@@ -6,9 +6,9 @@ window.SA = window.SA || {};
     skin:'original', primary:'#88c8ed', secondary:'#fff6dd', tertiary:'#83c4e8', head:'#91cce9', eyes:'#ffffff', highlight:'#ffffff', decor:'#e6a028', pattern:'spots', patternSize:1, patternGap:56, skinGlow:.2, material:1,
     arena:'stone', floor:'brick', environment:'#24313a', decorations:1, particles:220, lighting:1, glow:1, shadows:.7, absorption:true, collisionEffects:true, quality:'high', adaptiveQuality:true, zoom:1, wheelZoom:true, wheelZoomSpeed:1, boostGlow:true, boostGlowColor:'#a4efff', boostGlowIntensity:1, density:1,
     background:'', backgroundName:'', backgroundPreset:'custom', backgroundFit:'cover', backgroundScale:1, backgroundOpacity:1, backgroundDarken:.3,
-    initialLength:700, initialScore:3000, speed:145, maxSpeed:265, turnRate:3.4, acceleration:350, growth:4, foodCount:700, foodSize:7, goal:150000, mapSize:4800, foodRate:18, foodValue:240, collision:'classic', playerCollisionAssist:false, playerHeadGrace:90, boosting:true, boostMinScore:1, boostLowBalanceCost:.2, maxLength:4200,
+    initialLength:700, initialScore:3000, speed:145, maxSpeed:265, turnRate:3.4, acceleration:350, growth:4, widthGrowth:.012, foodCount:700, foodSize:7, goal:150000, mapSize:4800, foodRate:18, foodValue:240, collision:'classic', playerCollisionAssist:false, playerHeadGrace:90, boosting:true, boostMinScore:1, boostLowBalanceCost:.2, maxLength:4200,
     aiEnabled:true, aiCount:14, aiMin:8, aiMax:24, aiSpeed:125, difficulty:.8, aggression:.25, appetite:1, turnFrequency:.8, aiSize:1, respawn:5, variety:true,
-    numbers:true, uiPosition:'top', uiScale:1, textColor:'#b0efa6', progressColor:'#2bfa1b', joystick:'glass', labels:true, currency:'ARS', language:'ru', sound:false
+    numbers:true, uiPosition:'top', uiScale:1, textColor:'#b0efa6', progressColor:'#2bfa1b', joystick:'glass', labels:true, currency:'ARS', language:'ru', sound:true
   };
   // Each control has a single source of truth; imported values use the same constraints.
   S.schema = [
@@ -22,6 +22,7 @@ window.SA = window.SA || {};
     ['aiEnabled','AI-противники','check'],['aiCount','Желаемое количество','range',0,36,1],['aiMin','Минимум противников','range',0,30,1],['aiMax','Максимум противников','range',0,40,1],['aiSpeed','Скорость AI','range',50,260,5],['difficulty','Навык избегания столкновений','range',0,1,.05],['aggression','Агрессивность','range',0,1,.05],['appetite','Активность поиска еды','range',0,2,.1],['turnFrequency','Частота смены направления','range',.2,3,.1],['aiSize','Размеры противников','range',.5,2,.1],['respawn','Задержка возрождения (с)','range',1,20,1],['variety','Разнообразные скины','check'],
     ['numbers','Числовые показатели','check'],['uiPosition','Расположение HUD','select',['top','bottom']],['uiScale','Размер интерфейса','range',.75,1.35,.05],['textColor','Цвет текста','color'],['progressColor','Цвет прогресс-бара','color'],['joystick','Вид джойстика','select',['glass','solid','minimal']],['labels','Плашки над змеями','check'],['currency','Название валюты / единиц очков','text',40],['language','Язык игры / Idioma / Lingua','select',['ru','es','it']],['sound','Звук сбора','check']
   ];
+  S.schema.splice(42,0,['widthGrowth','Рост ширины за объект','range',0,.05,.001]);
   S.clone = o => JSON.parse(JSON.stringify(o));
   S.clamp = (x,a,b) => Math.min(b,Math.max(a,x));
   S.sanitize = raw => {
@@ -60,15 +61,23 @@ window.SA = window.SA || {};
     coral:{colors:['#713d3d','#c47b77','#90504c'],decor:'#f1bc9d',pattern:'spots',eye:'#fff7ed',highlight:'#ffd6c5'},
     amber:{colors:['#845727','#d5a757','#a77739'],decor:'#573c25',pattern:'spots',rosettes:true,eye:'#fffbe9',highlight:'#ffe0a4'},
     copper:{colors:['#653b2c','#b97950','#824a32'],decor:'#3d2925',pattern:'spots',rosettes:true,eye:'#fff4e6',highlight:'#eec7a1'},
-    snowleopard:{colors:['#596871','#b0bab8','#74858a'],decor:'#38454d',pattern:'spots',rosettes:true,eye:'#f6ffff',highlight:'#e1edf0'}
+    snowleopard:{colors:['#596871','#b0bab8','#74858a'],decor:'#38454d',pattern:'spots',rosettes:true,eye:'#f6ffff',highlight:'#e1edf0'},
+    electric:{colors:['#39267c','#b18bff','#453592'],decor:'#d8c2ff',pattern:'lightning',eye:'#f7f1ff',highlight:'#e7d7ff'},
+    glacier:{colors:['#14718b','#a4f5ff','#318fa7'],decor:'#e3ffff',pattern:'hex',eye:'#efffff',highlight:'#d4ffff'},
+    rosewire:{colors:['#784b6c','#f0c9dc','#966783'],decor:'#bd769e',pattern:'lattice',eye:'#fff4fb',highlight:'#ffe5f3'},
+    mintwire:{colors:['#176c68','#b7fff0','#278d80'],decor:'#4dd4bf',pattern:'lattice',eye:'#f0fffb',highlight:'#d5fff7'},
+    ivoryspine:{colors:['#637078','#e5e9df','#8c9894'],decor:'#39464c',pattern:'spine',eye:'#ffffff',highlight:'#ffffff'},
+    ember:{colors:['#7d261d','#ffc760','#bd4828'],decor:'#fff0a3',pattern:'lightning',eye:'#fff8e8',highlight:'#fff0b6'},
+    sunscale:{colors:['#80521d','#f3cf6e','#a8782d'],decor:'#5c3a1c',pattern:'hex',eye:'#fff9e7',highlight:'#ffedb7'},
+    oceanlattice:{colors:['#174b78','#70d8ed','#326d9c'],decor:'#b3f4ff',pattern:'lattice',eye:'#f3fdff',highlight:'#ddfbff'}
   };
   // Country skins are intentionally absent; spawn and settings sync share this list.
-  S.botSkins=Object.freeze(['jade','leopard','ruby','emerald','moss','teal','amethyst','plum','coral','amber','copper','snowleopard']);
+  S.botSkins=Object.freeze(['jade','leopard','ruby','emerald','moss','teal','amethyst','plum','coral','amber','copper','snowleopard','electric','glacier','rosewire','mintwire','ivoryspine','ember','sunscale','oceanlattice']);
   S.getPalette = (name,cfg) => name==='custom' ? {colors:[cfg.primary,cfg.secondary,cfg.tertiary],decor:cfg.decor,pattern:cfg.pattern,head:cfg.head,eye:cfg.eyes,highlight:cfg.highlight} : S.palettes[name]||S.palettes.original;
   S.storage={
     get(key,fallback){try{return JSON.parse(localStorage.getItem('serpent.'+key))??fallback;}catch{return fallback;}},
     put(key,value){localStorage.setItem('serpent.'+key,JSON.stringify(value));},
-    settings(){const raw=this.get('settings',S.defaults);if(raw&&raw.foodCount===1700){raw.foodCount=700;this.put('settings',raw);}return S.sanitize(raw);}
+    settings(){const raw=this.get('settings',S.defaults);if(raw&&raw.foodCount===1700){raw.foodCount=700;}try{if(localStorage.getItem('serpent.foodSoundV1')!=='1'){raw.sound=true;localStorage.setItem('serpent.foodSoundV1','1');this.put('settings',raw);}}catch{}return S.sanitize(raw);}
   };
   // Large images live in IndexedDB, not in the small synchronous LocalStorage quota.
   let assetDB,saveQueue=Promise.resolve(),storedBackground;

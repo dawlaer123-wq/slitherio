@@ -17,6 +17,10 @@
       "pass": true
     },
     {
+      "name": "Food pickup sound is enabled once for existing installs but a later opt-out persists",
+      "pass": true
+    },
+    {
       "name": "All configurable defaults have schema or asset metadata",
       "pass": true
     },
@@ -33,6 +37,10 @@
       "pass": true
     },
     {
+      "name": "Collection increases width as well as length",
+      "pass": true
+    },
+    {
       "name": "World update collects food by proximity",
       "pass": true
     },
@@ -42,6 +50,26 @@
     },
     {
       "name": "Boost accelerates and spends score/length",
+      "pass": true
+    },
+    {
+      "name": "Low-balance boost remains available and uses the configured reduced cost",
+      "pass": true
+    },
+    {
+      "name": "Death loot is a compact gold cluster with bounded object count",
+      "pass": true
+    },
+    {
+      "name": "Ground food mixes mostly gold with a small red minority",
+      "pass": true
+    },
+    {
+      "name": "Food can mark rare ground gold separately from dropped loot",
+      "pass": true
+    },
+    {
+      "name": "Player collection emits pickup event and a food-to-head animation",
       "pass": true
     },
     {
@@ -61,7 +89,7 @@
       "pass": true
     },
     {
-      "name": "Ordinary food is red-classified, death loot stays gold and drop count is reduced",
+      "name": "Ground colors stay separate from reduced death loot",
       "pass": true
     },
     {

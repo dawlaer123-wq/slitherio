@@ -5,7 +5,7 @@
    skin:{name:'PLAYER SKIN',ru:'Скин игрока',keys:['primary','secondary','tertiary','head','eyes','highlight','decor','pattern','patternSize','patternGap','skinGlow','material']},
    visual:{name:'VISUAL SETTINGS',ru:'Окружение и свет',keys:['arena','floor','environment','decorations','particles','lighting','glow','shadows','absorption','collisionEffects','quality','adaptiveQuality','zoom','wheelZoom','wheelZoomSpeed','boostGlow','boostGlowColor','boostGlowIntensity','density']},
    background:{name:'ARENA BACKGROUND',ru:'Свой фон арены',keys:['backgroundPreset','backgroundFit','backgroundScale','backgroundOpacity','backgroundDarken']},
-   gameplay:{name:'GAMEPLAY SETTINGS',ru:'Физика и прогресс',keys:['initialLength','initialScore','speed','maxSpeed','turnRate','acceleration','growth','foodCount','foodSize','foodValue','goal','mapSize','foodRate','collision','playerCollisionAssist','playerHeadGrace','boosting','boostMinScore','boostLowBalanceCost','maxLength']},
+   gameplay:{name:'GAMEPLAY SETTINGS',ru:'Физика и прогресс',keys:['initialLength','initialScore','speed','maxSpeed','turnRate','acceleration','growth','widthGrowth','foodCount','foodSize','foodValue','goal','mapSize','foodRate','collision','playerCollisionAssist','playerHeadGrace','boosting','boostMinScore','boostLowBalanceCost','maxLength']},
    ai:{name:'AI SETTINGS',ru:'Участники арены',keys:['aiEnabled','aiCount','aiMin','aiMax','aiSpeed','difficulty','aggression','appetite','turnFrequency','aiSize','respawn','variety']},
    ui:{name:'UI SETTINGS',ru:'Интерфейс и управление',keys:['numbers','uiPosition','uiScale','textColor','progressColor','joystick','labels','currency','language','sound']}
  };

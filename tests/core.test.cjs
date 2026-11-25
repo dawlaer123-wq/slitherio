@@ -13,10 +13,25 @@ test('Lower default food count migrates only the previous default and keeps othe
     stored=JSON.stringify({foodCount:900,skin:'spain'});const custom=S.storage.settings();assert.equal(custom.foodCount,900);assert.equal(custom.skin,'spain');
   }finally{context.localStorage.getItem=get;context.localStorage.setItem=set;}
 });
+test('Food pickup sound is enabled once for existing installs but a later opt-out persists',()=>{
+  const get=context.localStorage.getItem,set=context.localStorage.setItem,data=new Map([['serpent.settings',JSON.stringify({...S.defaults,sound:false})]]);
+  try{
+    context.localStorage.getItem=key=>data.get(key)??null;
+    context.localStorage.setItem=(key,value)=>data.set(key,value);
+    assert.equal(S.storage.settings().sound,true);
+    data.set('serpent.settings',JSON.stringify({...S.defaults,sound:false}));
+    assert.equal(S.storage.settings().sound,false);
+  }finally{context.localStorage.getItem=get;context.localStorage.setItem=set;}
+});
 test('All configurable defaults have schema or asset metadata',()=>{for(const k of Object.keys(S.defaults))assert.ok(S.schema.some(s=>s[0]===k)||['background','backgroundName'].includes(k),k);});
 test('Fixed movement and turn-rate bound',()=>{const w=world({collision:'safe'}),s=w.player;s.velocity=145;s.desired=s.angle+Math.PI;const a=s.angle,x=s.x,y=s.y;s.advance(1/60,w.cfg);assert.ok(Math.abs(S.angleDiff(s.angle,a))<=w.cfg.turnRate/60+1e-8);assert.ok(Math.abs(Math.hypot(s.x-x,s.y-y)-145/60)<1e-8);});
 test('Head history follows exact path with no stretching',()=>{const w=world({collision:'safe'}),s=w.player;s.trail=[];s.length=700;s.velocity=145;s.lastSample={x:s.x,y:s.y};for(let i=0;i<600;i++){s.desired=Math.sin(i/80)*1.7;s.advance(1/60,w.cfg);}assert.ok(s.trail.length>100);for(let i=1;i<s.trail.length;i++)assert.ok(Math.abs(Math.hypot(s.trail[i].x-s.trail[i-1].x,s.trail[i].y-s.trail[i-1].y)-5)<1e-6);});
 test('Collection grows score and body once only',()=>{const w=world(),p=w.player,score=p.score,len=p.length;w.addFood(p.x,p.y,1);const f=w.food.at(-1);w.collect(p,f);w.collect(p,f);assert.equal(p.score,score+f.value);assert.equal(p.length,len+w.cfg.growth*f.size);assert.equal(p.collected,1);assert.equal(f.alive,false);});
+test('Collection increases width as well as length',()=>{
+  const w=world({widthGrowth:.02}),p=w.player,w0=p.widthFactor,r0=p.radius,l0=p.length;
+  w.addFood(p.x,p.y,2);w.collect(p,w.food.at(-1));
+  assert.ok(p.length>l0&&p.widthFactor>w0&&p.radius>r0,'Food did not make the player visibly thicker');
+});
 test('World update collects food by proximity',()=>{const w=world(),p=w.player;w.food=[];w.addFood(p.x,p.y,1);w.update(1/60,{angle:p.angle});assert.equal(p.collected,1);});
 test('Maximum length is respected',()=>{const w=world({maxLength:1000});w.player.length=999;w.addFood(w.player.x,w.player.y,2);w.collect(w.player,w.food.at(-1));assert.equal(w.player.length,1000);});
 test('Boost accelerates and spends score/length',()=>{const w=world({collision:'safe'}),p=w.player;w.food=[];const initial=p.score;for(let i=0;i<100;i++)w.update(1/60,{angle:p.angle,boost:true});assert.ok(p.velocity>w.cfg.speed);assert.ok(p.score<initial);assert.ok(p.length<w.cfg.initialLength);});
@@ -32,16 +47,16 @@ test('Death loot is a compact gold cluster with bounded object count',()=>{
   victim.length=4200;victim.score=20000;victim.x=1200;victim.y=1300;
   w.kill(victim);
   const loot=w.food;
-  assert.ok(loot.length<=24&&loot.length>=8);
+  assert.ok(loot.length>=48&&loot.length<=480);
   assert.ok(loot.every(f=>f.dropped),'Death loot must use the gold visual');
-  assert.ok(loot.every(f=>Math.hypot(f.x-victim.x,f.y-victim.y)<=95),'Loot spread beyond the compact cluster');
-  assert.ok(loot.reduce((sum,f)=>sum+f.value,0)>=victim.score*.54,'Cluster lost too much of the victim reward');
+  assert.ok(Math.max(...loot.map(f=>f.x))-Math.min(...loot.map(f=>f.x))>300||Math.max(...loot.map(f=>f.y))-Math.min(...loot.map(f=>f.y))>300,'Loot is still a compact cluster');
+  assert.ok(loot.reduce((sum,f)=>sum+f.value,0)>=victim.score*.65,'Trail lost too much of the victim reward');
 });
 test('Ground food mixes mostly gold with a small red minority',()=>{
   const w=world({foodCount:700});const ground=w.food.filter(f=>!f.dropped);
   const gold=ground.filter(f=>f.gold).length,red=ground.filter(f=>!f.gold).length;
   assert.ok(gold>0&&red>0,'Both ground food colors should spawn');
-  assert.ok(red<ground.length*.25,`Too many red objects: ${red}/${ground.length}`);
+  assert.ok(red<ground.length*.12,`Too many red objects: ${red}/${ground.length}`);
   assert.ok(ground.every(f=>Number.isFinite(f.rewardScale)),'Ground gold must remain regular collectible food');
 });
 test('Food can mark rare ground gold separately from dropped loot',()=>{
@@ -52,6 +67,18 @@ test('Food can mark rare ground gold separately from dropped loot',()=>{
   assert.equal(w.food[1].gold,true);
   assert.equal(w.food[1].dropped,false);
   assert.equal(w.food[2].dropped,true);
+});
+test('Player collection emits pickup event and a food-to-head animation',()=>{
+  const w=world(),p=w.player;w.food=[];
+  w.addFood(p.x-20,p.y,1,false,true);const item=w.food.at(-1);let heard=null;w.onEat=food=>{heard=food;};
+  w.collect(p,item);
+  assert.equal(heard,item);
+  const effect=w.effects.find(e=>e.type==='eat');
+  assert.ok(effect,'Missing pickup animation');
+  assert.equal(effect.x,item.x);assert.equal(effect.y,item.y);
+  assert.equal(effect.tx,p.x);assert.equal(effect.ty,p.y);
+  assert.equal(effect.gold,true);
+  assert.equal(effect.duration,.18);
 });
 test('AI actively moves, seeks food, and consumes it',()=>{const w=world({aiEnabled:true,aiCount:4,aiMin:0,aiMax:5,collision:'safe'});w.food=[];const s=w.snakes[1],x=s.x,y=s.y;w.addFood(x,y,1);for(let i=0;i<180;i++)w.update(1/60,{angle:w.player.angle});assert.ok(Math.hypot(s.x-x,s.y-y)>50);assert.ok(s.collected>=1);assert.equal(w.snakes.length,5);});
 test('AI disabled removes all opponents',()=>{const w=world({aiEnabled:true,aiCount:4,aiMin:0});w.cfg.aiEnabled=false;w.sync();assert.equal(w.snakes.length,1);});
@@ -65,10 +92,10 @@ test('Ground colors stay separate from reduced death loot',()=>{
   const regular=w.food.find(f=>f.alive);assert.equal(regular.dropped,false);
   const victim=w.snakes[1],length=victim.length,oldGoldCount=Math.ceil(length/10);
   const before=w.food.length;w.kill(victim);const loot=w.food.slice(before);
-  assert.ok(loot.length>0&&loot.length<=Math.ceil(length/25)+2,`Too many death drops: ${loot.length}`);
+  assert.ok(loot.length>=48&&loot.length<=480,`Unexpected death trail size: ${loot.length}`);
   assert.ok(loot.every(f=>f.dropped&&f.rewardScale===null),'Death loot should retain gold-drop classification');
   assert.ok(loot.reduce((sum,f)=>sum+f.value,0)>=victim.score*.5,'Reduced drops lost too much total reward');
-  assert.ok(loot.length<oldGoldCount*.55,'Death loot count was not reduced enough');
+  assert.ok(loot.length>oldGoldCount*.9,'Death loot trail should preserve a long sequence of drops');
   const tail=victim.trail.at(-1);if(tail){w.addFood(tail.x,tail.y,.65,true);assert.equal(w.food.at(-1).dropped,true);}
 });
 test('Head-to-body collision kills and credits opponent',()=>{const w=world({aiEnabled:true,aiCount:1,aiMin:0,collision:'classic'});const p=w.player,b=w.snakes[1];w.time=5;p.spawnTime=b.spawnTime=0;p.velocity=0;p.x=1000;p.y=1000;p.trail=[{x:990,y:1000},{x:980,y:1000}];p.lastSample={x:1000,y:1000};b.x=1200;b.y=1000;b.trail=[];for(let x=1195;x>800;x-=5)b.trail.push({x,y:1000});b.lastSample={x:b.x,y:b.y};w.update(1/60,{});assert.equal(p.alive,false);assert.equal(b.kills,1);});
@@ -97,10 +124,10 @@ test('Score animation is monotonic, retargetable, exact and frame-rate independe
   assert.equal(S.smoothNumber(3000,8000,0),3000);
 });
 test('Opponent variants reuse native materials and contain no country motifs',()=>{
-  assert.equal(S.botSkins.length,12);
+  assert.equal(S.botSkins.length,20);
   const seen=new Set(),w=world({aiEnabled:true,aiCount:36,aiMin:0,aiMax:40});
-  for(let i=0;i<500;i++)seen.add(w.randomSkin());assert.equal(seen.size,12);
-  for(const key of S.botSkins){const p=S.palettes[key];assert.equal(p.colors.length,3);assert.ok(['scales','spots'].includes(p.pattern));assert.ok(!['argentina','venezuela','brazil'].includes(key));}
+  for(let i=0;i<1000;i++)seen.add(w.randomSkin());assert.equal(seen.size,20);
+  for(const key of S.botSkins){const p=S.palettes[key];assert.equal(p.colors.length,3);assert.ok(['scales','spots','lightning','hex','lattice','spine'].includes(p.pattern));assert.ok(!['argentina','venezuela','brazil','italy','spain','peru','bolivia'].includes(key));}
 });
 test('Opponent starting scores scale with round entry, including reset and respawn',()=>{
   for(const base of [0,1,40,100,3000,30000]){

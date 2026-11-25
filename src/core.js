@@ -25,10 +25,10 @@
       this.id=world.nextId++;this.player=player;this.alive=true;this.angle=world.rng.range(-Math.PI,Math.PI);this.desired=this.angle;this.velocity=0;this.score=player?world.cfg.initialScore:world.randomBotScore();this.length=player?world.cfg.initialLength:world.rng.range(300,1350)*world.cfg.aiSize;this.skin=player?world.cfg.skin:world.randomSkin();this.preferredSkin=this.skin;
       const pos=world.spawnPosition(player);this.x=pos.x;this.y=pos.y;if(!player&&world.player){this.angle=Math.atan2(world.player.y-this.y,world.player.x-this.x)+world.rng.range(-.6,.6);this.desired=this.angle;}this.spawnTime=world.time;this.trail=[];this.think=0;this.target=null;this.boost=false;this.boostClock=0;this.collected=0;this.kills=0;
       let tx=this.x,ty=this.y;for(let d=5;d<this.length+20;d+=5){const a=this.angle+Math.sin(d/160)*.85;tx-=Math.cos(a)*5;ty-=Math.sin(a)*5;this.trail.push({x:tx,y:ty});}
-      this.lastSample={x:this.x,y:this.y};
+      this.lastSample={x:this.x,y:this.y};this.widthFactor=1;
       this.displayScore=this.score;this.displayRadius=this.radius;
     }
-    get radius(){return S.clamp(11+Math.sqrt(Math.max(0,this.score))/42,12,30)*(this.player?1:Math.sqrt(this.worldSize||1));}
+    get radius(){const base=S.clamp(11+Math.sqrt(Math.max(0,this.score))/42,12,30);return S.clamp(base*(this.widthFactor||1),12,42)*(this.player?1:Math.sqrt(this.worldSize||1));}
     points(){
       if(this._points)return this._points;
       const pts=this._pointBuffer||(this._pointBuffer=[]),head=this._headPoint||(this._headPoint={x:0,y:0}),tail=this._tailPoint||(this._tailPoint={x:0,y:0});head.x=this.x;head.y=this.y;pts[0]=head;
@@ -79,7 +79,7 @@
     addBot(){const s=new Snake(this);s.worldSize=this.cfg.aiSize;this.snakes.push(s);return s;}
     addFood(x,y,rich=1,dropped=false,gold=false){if(this.food.length>8500)return;this.food.push({id:this.nextId++,x:S.clamp(x,35,this.size-35),y:S.clamp(y,35,this.size-35),size:this.rng.range(.72,1.2)*rich,value:this.cfg.foodValue*rich,rewardScale:dropped?null:rich,dropped,gold,phase:this.rng.range(0,TAU),alive:true});}
     populateFood(n){
-      while(this.food.length<n){const near=this.rng.next()<.62,px=near?this.player.x:this.rng.range(150,this.size-150),py=near?this.player.y:this.rng.range(150,this.size-150);const x=S.clamp(px+this.rng.range(-1100,1100),120,this.size-120),y=S.clamp(py+this.rng.range(-1100,1100),120,this.size-120);if(this.rng.next()<.83){const a=this.rng.range(0,TAU),bend=this.rng.range(-1.3,1.3),len=Math.min(n-this.food.length,Math.max(1,Math.floor(this.rng.range(3,9)*this.cfg.density)));for(let i=0;i<len;i++){const t=i/len*Math.PI*1.8;this.addFood(x+Math.cos(a)*i*11+Math.sin(t)*bend*85,y+Math.sin(a)*i*11+Math.cos(t)*bend*85,this.rng.range(.8,1.35),false,this.rng.next()>=.18);}}else this.addFood(x,y,.7,false,this.rng.next()>=.18);}
+      while(this.food.length<n){const near=this.rng.next()<.62,px=near?this.player.x:this.rng.range(150,this.size-150),py=near?this.player.y:this.rng.range(150,this.size-150);const x=S.clamp(px+this.rng.range(-1100,1100),120,this.size-120),y=S.clamp(py+this.rng.range(-1100,1100),120,this.size-120);if(this.rng.next()<.83){const a=this.rng.range(0,TAU),bend=this.rng.range(-1.3,1.3),len=Math.min(n-this.food.length,Math.max(1,Math.floor(this.rng.range(32,78)*this.cfg.density)));for(let i=0;i<len;i++){const t=i/len*Math.PI*1.8;this.addFood(x+Math.cos(a)*i*8+Math.sin(t)*bend*64,y+Math.sin(a)*i*8+Math.cos(t)*bend*64,this.rng.range(1,1.45),false,this.rng.next()>=.08);}}else this.addFood(x,y,.95,false,this.rng.next()>=.08);}
     }
     reindex(){this.foodGrid.clear();for(const f of this.food)if(f.alive)this.foodGrid.add(f);this.bodyGrid.clear();for(const s of this.snakes){if(!s.alive)continue;const pts=s.points(),radius=s.radius,pool=s._bodySamples||(s._bodySamples=[]);for(let i=0,k=0;i<pts.length;i+=3,k++){const b=pool[k]||(pool[k]={snake:s});b.x=pts[i].x;b.y=pts[i].y;b.offset=i*5;b.r=radius*(i>pts.length-8?.7:1);this.bodyGrid.add(b);}}}
     ai(s,dt){
@@ -94,13 +94,13 @@
       vx+=this.rng.range(-.2,.2);vy+=this.rng.range(-.2,.2);s.desired=Math.atan2(vy,vx);
     }
     collect(s,f){
-      if(!f.alive||!s.alive)return;f.alive=false;s.score+=f.value;s.length=Math.min(this.cfg.maxLength,s.length+this.cfg.growth*f.size);s.collected++;s._points=null;
-      if(s.player){if(this.cfg.absorption)this.effects.push({x:s.x,y:s.y,age:0,duration:.45,type:'eat',r:s.radius});if(this.onEat)this.onEat(f);}
+      if(!f.alive||!s.alive)return;f.alive=false;s.score+=f.value;s.length=Math.min(this.cfg.maxLength,s.length+this.cfg.growth*f.size);s.widthFactor=Math.min(2.35,(s.widthFactor||1)+(this.cfg.widthGrowth??.012)*f.size);s.collected++;s._points=null;
+      if(s.player){if(this.cfg.absorption)this.effects.push({x:f.x,y:f.y,tx:s.x,ty:s.y,age:0,duration:.18,type:'eat',r:this.cfg.foodSize*f.size,gold:f.gold||f.dropped});if(this.onEat)this.onEat(f);}
     }
     kill(s,killer){
       if(!s.alive)return;s.alive=false;if(killer&&killer!==s)killer.kills++;
-      const count=Math.min(24,Math.max(8,Math.ceil(s.length/180)),Math.max(0,8500-this.food.length)),val=Math.max(this.cfg.foodValue,s.score/Math.max(1,count)*.55);
-      for(let i=0;i<count;i++){const a=this.rng.range(0,TAU),radius=Math.sqrt(this.rng.next())*95;this.addFood(s.x+Math.cos(a)*radius,s.y+Math.sin(a)*radius,1.3,true);this.food[this.food.length-1].value=val;}
+      const path=s.points(),count=Math.min(480,Math.max(48,Math.ceil(s.length/9)),Math.max(0,8500-this.food.length)),val=Math.max(this.cfg.foodValue,s.score/Math.max(1,count)*.72);
+      for(let i=0;i<count;i++){const index=Math.min(path.length-1,Math.floor(i*Math.max(0,path.length-1)/Math.max(1,count-1))),point=path[index]||{x:s.x,y:s.y},next=path[Math.min(path.length-1,index+1)]||point,dx=next.x-point.x,dy=next.y-point.y,d=Math.hypot(dx,dy)||1,jitter=this.rng.range(-7,7);this.addFood(point.x-dy/d*jitter,point.y+dx/d*jitter,1.3,true,true);this.food[this.food.length-1].value=val;}
       if(this.cfg.collisionEffects)this.effects.push({x:s.x,y:s.y,age:0,duration:.8,type:'death',r:s.radius});
       if(s.player&&!this.demo&&!this.goalReached){this.goalReached=true;this.onEnd?.(false);}
     }

@@ -25,6 +25,10 @@
       "pass": true
     },
     {
+      "name": "Pickup sound presets and flag offset sanitize to supported options and range",
+      "pass": true
+    },
+    {
       "name": "Fixed movement and turn-rate bound",
       "pass": true
     },

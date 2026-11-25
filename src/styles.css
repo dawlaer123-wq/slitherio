@@ -18,3 +18,5 @@
 
 
 .background-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0 24px}.background-card{padding:0 0 12px;overflow:hidden;text-align:left;border:1px solid #344b50;border-radius:12px;background:#101c22;color:#dfebe7;cursor:pointer}.background-card img{display:block;width:100%;height:160px;object-fit:cover}.background-card strong,.background-card small{display:block;margin:10px 12px 0}.background-card small{color:#99b3af}.background-card.selected{border-color:#b5f268;box-shadow:0 0 0 1px #b5f268}.background-card.selected small{color:#b5f268}@media(max-width:480px){.background-card img{height:115px}}
+/* Keep country-badge placement adjustable while preserving UI scaling. */
+#country{transform:translateY(calc(-1 * var(--flag-lift,0px))) scale(var(--control-scale,1))}

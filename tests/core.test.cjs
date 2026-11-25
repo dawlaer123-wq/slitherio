@@ -20,14 +20,48 @@ test('Collection grows score and body once only',()=>{const w=world(),p=w.player
 test('World update collects food by proximity',()=>{const w=world(),p=w.player;w.food=[];w.addFood(p.x,p.y,1);w.update(1/60,{angle:p.angle});assert.equal(p.collected,1);});
 test('Maximum length is respected',()=>{const w=world({maxLength:1000});w.player.length=999;w.addFood(w.player.x,w.player.y,2);w.collect(w.player,w.food.at(-1));assert.equal(w.player.length,1000);});
 test('Boost accelerates and spends score/length',()=>{const w=world({collision:'safe'}),p=w.player;w.food=[];const initial=p.score;for(let i=0;i<100;i++)w.update(1/60,{angle:p.angle,boost:true});assert.ok(p.velocity>w.cfg.speed);assert.ok(p.score<initial);assert.ok(p.length<w.cfg.initialLength);});
+test('Low-balance boost remains available and uses the configured reduced cost',()=>{
+  const make=score=>{const w=world({collision:'safe',initialScore:score,boostMinScore:1,boostLowBalanceCost:.2});w.food=[];const p=w.player;p.score=score;p.velocity=w.cfg.speed;w.update(.1,{angle:p.angle,boost:true});return {w,p};};
+  const low=make(40),high=make(1200);
+  assert.ok(low.p.velocity>low.w.cfg.speed,'Low-balance player did not accelerate');
+  assert.equal(low.p.score,40-0.1*80*.2);
+  assert.equal(high.p.score,1200-0.1*80);
+});
+test('Death loot is a compact gold cluster with bounded object count',()=>{
+  const w=world({aiEnabled:true,aiCount:1,aiMin:0,foodValue:10});const victim=w.snakes.find(s=>!s.player);w.food=[];
+  victim.length=4200;victim.score=20000;victim.x=1200;victim.y=1300;
+  w.kill(victim);
+  const loot=w.food;
+  assert.ok(loot.length<=24&&loot.length>=8);
+  assert.ok(loot.every(f=>f.dropped),'Death loot must use the gold visual');
+  assert.ok(loot.every(f=>Math.hypot(f.x-victim.x,f.y-victim.y)<=95),'Loot spread beyond the compact cluster');
+  assert.ok(loot.reduce((sum,f)=>sum+f.value,0)>=victim.score*.54,'Cluster lost too much of the victim reward');
+});
+test('Ground food mixes mostly gold with a small red minority',()=>{
+  const w=world({foodCount:700});const ground=w.food.filter(f=>!f.dropped);
+  const gold=ground.filter(f=>f.gold).length,red=ground.filter(f=>!f.gold).length;
+  assert.ok(gold>0&&red>0,'Both ground food colors should spawn');
+  assert.ok(red<ground.length*.25,`Too many red objects: ${red}/${ground.length}`);
+  assert.ok(ground.every(f=>Number.isFinite(f.rewardScale)),'Ground gold must remain regular collectible food');
+});
+test('Food can mark rare ground gold separately from dropped loot',()=>{
+  const w=world();w.food=[];
+  w.addFood(200,200,1);w.addFood(250,250,1,false,true);w.addFood(300,300,1,true);
+  assert.equal(w.food[0].dropped,false);
+  assert.equal(w.food[0].gold,false);
+  assert.equal(w.food[1].gold,true);
+  assert.equal(w.food[1].dropped,false);
+  assert.equal(w.food[2].dropped,true);
+});
 test('AI actively moves, seeks food, and consumes it',()=>{const w=world({aiEnabled:true,aiCount:4,aiMin:0,aiMax:5,collision:'safe'});w.food=[];const s=w.snakes[1],x=s.x,y=s.y;w.addFood(x,y,1);for(let i=0;i<180;i++)w.update(1/60,{angle:w.player.angle});assert.ok(Math.hypot(s.x-x,s.y-y)>50);assert.ok(s.collected>=1);assert.equal(w.snakes.length,5);});
 test('AI disabled removes all opponents',()=>{const w=world({aiEnabled:true,aiCount:4,aiMin:0});w.cfg.aiEnabled=false;w.sync();assert.equal(w.snakes.length,1);});
 test('AI target min/max and respawn delay',()=>{const w=world({aiEnabled:true,aiCount:0,aiMin:2,aiMax:3,respawn:1,collision:'safe'});assert.equal(w.snakes.length,3);w.kill(w.snakes[1],null);for(let i=0;i<70;i++)w.update(1/60,{});assert.equal(w.snakes.filter(s=>s.alive&&!s.player).length,2);});
 test('Death drops collectible gold and reports loss once',()=>{const w=world(),p=w.player;let events=0;w.onEnd=win=>{assert.equal(win,false);events++;};const n=w.food.length;w.kill(p,null);w.kill(p,null);assert.ok(w.food.length>n);assert.equal(events,1);assert.equal(p.alive,false);});
-test('Ordinary food is red-classified, death loot stays gold and drop count is reduced',()=>{
+test('Ground colors stay separate from reduced death loot',()=>{
   assert.equal(S.defaults.foodCount,700);
   const w=world({initialLength:700,foodCount:200,aiEnabled:true,aiCount:1,aiMin:0});
-  assert.ok(w.food.filter(f=>f.alive).every(f=>!f.dropped),'Starting/ambient food should be regular red food');
+  assert.ok(w.food.filter(f=>f.alive).every(f=>!f.dropped),'Starting/ambient food should not count as death loot');
+  assert.ok(w.food.some(f=>f.alive&&f.gold),'Starting gold food missing');
   const regular=w.food.find(f=>f.alive);assert.equal(regular.dropped,false);
   const victim=w.snakes[1],length=victim.length,oldGoldCount=Math.ceil(length/10);
   const before=w.food.length;w.kill(victim);const loot=w.food.slice(before);

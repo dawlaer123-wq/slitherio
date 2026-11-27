@@ -29,6 +29,10 @@
       "pass": true
     },
     {
+      "name": "Snake label settings sanitize and expose video-style defaults",
+      "pass": true
+    },
+    {
       "name": "Fixed movement and turn-rate bound",
       "pass": true
     },

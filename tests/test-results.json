@@ -113,6 +113,10 @@
       "pass": true
     },
     {
+      "name": "Goal signal is score-based while boundary remains the round exit",
+      "pass": true
+    },
+    {
       "name": "Frame independence for 60 Hz fixed simulation",
       "pass": true
     },

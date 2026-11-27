@@ -67,12 +67,12 @@
    sound(){
      if(!this.cfg.sound||!this.audio||this.audio.state!=='running')return;
      const now=this.audio.currentTime;if(now-(this.lastSound||0)<.032)return;this.lastSound=now;
-     const presets={soft:{type:'sine',from:390,to:245,duration:.055,volume:.008},crystal:{type:'sine',from:660,to:990,duration:.085,volume:.006},bubble:{type:'sine',from:520,to:285,duration:.075,volume:.009},spark:{type:'triangle',from:1180,to:760,duration:.045,volume:.006},pluck:{type:'triangle',from:310,to:185,duration:.065,volume:.01}};
+     const presets={soft:{type:'sine',from:390,to:245,duration:.055,volume:.018},crystal:{type:'sine',from:660,to:990,duration:.085,volume:.014},bubble:{type:'sine',from:520,to:285,duration:.075,volume:.02},spark:{type:'triangle',from:1180,to:760,duration:.045,volume:.014},pluck:{type:'triangle',from:310,to:185,duration:.065,volume:.022}};
      const p=presets[this.cfg.pickupSound]||presets.soft,o=this.audio.createOscillator(),g=this.audio.createGain();
      o.type=p.type;o.frequency.setValueAtTime(p.from,now);o.frequency.exponentialRampToValueAtTime(p.to,now+p.duration*.85);
      g.gain.setValueAtTime(.0001,now);g.gain.exponentialRampToValueAtTime(p.volume,now+.003);g.gain.exponentialRampToValueAtTime(.0001,now+p.duration);
      o.connect(g);g.connect(this.audio.destination);o.start(now);o.stop(now+p.duration);
-     if(this.cfg.pickupSound==='crystal'){const second=this.audio.createOscillator(),gain=this.audio.createGain();second.type='sine';second.frequency.setValueAtTime(1320,now+.012);gain.gain.setValueAtTime(.0001,now+.012);gain.gain.exponentialRampToValueAtTime(.0025,now+.017);gain.gain.exponentialRampToValueAtTime(.0001,now+.085);second.connect(gain);gain.connect(this.audio.destination);second.start(now+.012);second.stop(now+.09);}
+     if(this.cfg.pickupSound==='crystal'){const second=this.audio.createOscillator(),gain=this.audio.createGain();second.type='sine';second.frequency.setValueAtTime(1320,now+.012);gain.gain.setValueAtTime(.0001,now+.012);gain.gain.exponentialRampToValueAtTime(.006,now+.017);gain.gain.exponentialRampToValueAtTime(.0001,now+.085);second.connect(gain);gain.connect(this.audio.destination);second.start(now+.012);second.stop(now+.09);}
    }
  }
  S.app=new App();
